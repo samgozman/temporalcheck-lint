@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  # Keep in sync with the `version` field in .custom-gcl.yml.
+  GOLANGCI_LINT_VERSION: v2.12.2
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Oldest supported (the go.mod floor) and current stable.
+        go: [ "1.23.x", "stable" ]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ matrix.go }}
+
+      - name: Verify go.mod/go.sum are tidy
+        run: |
+          make tidy
+          git diff --exit-code go.mod go.sum
+
+      - name: Vet
+        run: make vet
+
+      - name: Test (fails below 90% coverage, generates coverage.out)
+        run: make cover-check
+
+      - name: Upload coverage reports to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          files: coverage.out
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+  lint:
+    name: Build plugin & self-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+
+      # This repo's .golangci.yml enables the `temporalcheck` custom module
+      # linter, so it can only be linted by a golangci-lint binary that has
+      # the plugin compiled in. We install the upstream binary, use it to
+      # build that custom binary (proving the plugin integrates), then lint
+      # this repo with the result.
+      - name: Install golangci-lint
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh \
+            | sh -s -- -b "$(go env GOPATH)/bin" "${GOLANGCI_LINT_VERSION}"
+
+      - name: Build the plugin into a custom golangci-lint binary
+        run: make build
+
+      - name: Self-lint with the custom binary
+        run: make run

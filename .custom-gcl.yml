@@ -1,0 +1,20 @@
+# Used by `golangci-lint custom` to build a golangci-lint binary that
+# includes this plugin. Run from the repo root once you've cloned this
+# project locally (or pin a released tag, see below).
+version: v2.12.2
+name: custom-gcl
+destination: ./bin
+
+plugins:
+  # Local development: build directly from this checkout.
+  # `import` must point at the package that actually calls register.Plugin
+  # (temporalcheck/plugin.go) — not the bare module root, which has no .go
+  # files of its own.
+  - module: 'github.com/samgozman/temporalcheck-lint'
+    import: 'github.com/samgozman/temporalcheck-lint/temporalcheck'
+    path: '.'
+
+  # Release builds: fetch the plugin from a tagged release on GitHub.
+  # - module: 'github.com/samgozman/temporalcheck-lint'
+  #   import: 'github.com/samgozman/temporalcheck-lint/temporalcheck'
+  #   version: v0.1.0

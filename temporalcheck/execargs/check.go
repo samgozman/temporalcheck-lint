@@ -1,0 +1,158 @@
+package execargs
+
+import (
+	"go/ast"
+	"go/types"
+
+	"golang.org/x/tools/go/analysis"
+)
+
+// checkSignature matches the call-site arguments against the resolved target
+// signature, accounting for the framework-injected leading parameter.
+func (c *checker) checkSignature(
+	pass *analysis.Pass,
+	call *ast.CallExpr,
+	entry string,
+	k kind,
+	sig *types.Signature,
+	args []ast.Expr,
+) {
+	params := sig.Params()
+	skip := skipCount(sig, k)
+	name := targetName(call.Args[1])
+
+	if sig.Variadic() {
+		c.checkVariadic(pass, call, entry, k, name, sig, skip, args)
+		return
+	}
+
+	want := params.Len() - skip
+	if want < 0 {
+		want = 0
+	}
+	if len(args) != want {
+		pass.Reportf(call.Lparen, "%s: %s %q expects %d %s, got %d",
+			entry, noun(k), name, want, argWord(want), len(args))
+		return
+	}
+	if !c.checkTypes {
+		return
+	}
+	for i, arg := range args {
+		c.checkAssignable(pass, arg, entry, name, i+1, params.At(skip+i).Type())
+	}
+}
+
+// checkVariadic handles a variadic target: a fixed prefix of parameters
+// followed by a final ...T that absorbs the trailing arguments.
+func (c *checker) checkVariadic(
+	pass *analysis.Pass,
+	call *ast.CallExpr,
+	entry string,
+	k kind,
+	name string,
+	sig *types.Signature,
+	skip int,
+	args []ast.Expr,
+) {
+	params := sig.Params()
+	variadicIdx := params.Len() - 1 // the variadic parameter is always last
+	fixed := variadicIdx - skip
+	if fixed < 0 {
+		fixed = 0
+	}
+
+	if len(args) < fixed {
+		pass.Reportf(call.Lparen, "%s: %s %q expects at least %d %s, got %d",
+			entry, noun(k), name, fixed, argWord(fixed), len(args))
+		return
+	}
+	if !c.checkTypes {
+		return
+	}
+	for i := 0; i < fixed; i++ {
+		c.checkAssignable(pass, args[i], entry, name, i+1, params.At(skip+i).Type())
+	}
+	slice, ok := params.At(variadicIdx).Type().(*types.Slice)
+	if !ok {
+		return
+	}
+	elem := slice.Elem()
+	for i := fixed; i < len(args); i++ {
+		c.checkAssignable(pass, args[i], entry, name, i+1, elem)
+	}
+}
+
+func (c *checker) checkAssignable(pass *analysis.Pass, arg ast.Expr, entry, name string, pos int, want types.Type) {
+	got := pass.TypesInfo.TypeOf(arg)
+	if got == nil || want == nil {
+		return
+	}
+	if types.AssignableTo(got, want) {
+		return
+	}
+	pass.Reportf(arg.Pos(), "%s: arg %d of %q has type %s, want %s",
+		entry, pos, name, typeStr(got), typeStr(want))
+}
+
+// skipCount returns how many leading parameters Temporal injects at run time and
+// that the caller therefore must not supply.
+func skipCount(sig *types.Signature, k kind) int {
+	if sig.Params().Len() == 0 {
+		return 0
+	}
+	first := sig.Params().At(0).Type()
+	switch k {
+	case kindChildWorkflow:
+		if named(first, workflowPkg, "Context") {
+			return 1
+		}
+	case kindActivity:
+		if named(first, contextPkg, "Context") {
+			return 1
+		}
+	}
+	return 0
+}
+
+func noun(k kind) string {
+	if k == kindChildWorkflow {
+		return "child workflow"
+	}
+	return "activity"
+}
+
+func argWord(n int) string {
+	if n == 1 {
+		return "argument"
+	}
+	return "arguments"
+}
+
+func targetName(expr ast.Expr) string {
+	switch e := expr.(type) {
+	case *ast.SelectorExpr:
+		return e.Sel.Name
+	case *ast.Ident:
+		return e.Name
+	default:
+		return "target"
+	}
+}
+
+// named reports whether t is the named type pkgPath.name.
+func named(t types.Type, pkgPath, name string) bool {
+	n, ok := t.(*types.Named)
+	if !ok {
+		return false
+	}
+	obj := n.Obj()
+	return obj != nil && obj.Pkg() != nil &&
+		obj.Pkg().Path() == pkgPath && obj.Name() == name
+}
+
+// typeStr renders a type using short package names (context.Context, not the
+// full import path).
+func typeStr(t types.Type) string {
+	return types.TypeString(t, func(p *types.Package) string { return p.Name() })
+}

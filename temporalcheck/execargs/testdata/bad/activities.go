@@ -1,0 +1,21 @@
+package bad
+
+import "context"
+
+type Activities struct{}
+
+func (a *Activities) Greet(ctx context.Context, name string) (string, error) {
+	return "", nil
+}
+
+func (a *Activities) ProcessOrder(ctx context.Context, orderID string, amount int) (bool, error) {
+	return false, nil
+}
+
+func (a *Activities) Cleanup(jobID string) error {
+	return nil
+}
+
+func (a *Activities) Notify(ctx context.Context, userID string, tags ...string) error {
+	return nil
+}

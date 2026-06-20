@@ -1,0 +1,19 @@
+# Example consumer config — also used to self-lint this repo via `make run`.
+# In a project you want to lint, this lives at the repo root and is run with
+# the custom binary: `./bin/custom-gcl run`.
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - temporalcheck
+  settings:
+    custom:
+      temporalcheck:
+        type: module
+        description: Static checks for Temporal Go SDK usage.
+        original-url: github.com/samgozman/temporalcheck-lint
+        settings:
+          # Verify argument types in addition to argument count (default true).
+          # Set to false if Temporal's DataConverter makes the type half noisy.
+          check-types: true
