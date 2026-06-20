@@ -36,6 +36,10 @@ cover-check: test-cov ## Run tests with coverage and fail below COVERAGE_MIN
 vet: ## Run go vet
 	go vet ./...
 
+.PHONY: conformance
+conformance: ## Build the conformance module against the real Temporal SDK (needs a recent Go)
+	go -C conformance build ./...
+
 .PHONY: tidy
 tidy: ## Tidy module dependencies
 	go mod tidy

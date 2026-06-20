@@ -142,10 +142,27 @@ information. For each call the analyzer:
 make test          # go test -race -v ./...
 make cover-check   # tests + 90% coverage gate
 make vet
+make conformance   # build ./conformance against the real Temporal SDK
 ```
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for how the linter and its fixtures are
 organised.
+
+### The stub and the conformance check
+
+The analyzer never imports the Temporal SDK — it matches calls by package path
+through `go/types`. The SDK only appears in the **test fixtures**, which use a
+tiny local stub (`testdata/temporalsdk/`) so the tests stay hermetic and
+offline.
+
+To make sure that stub doesn't silently drift from the real SDK, the separate
+[`conformance/`](conformance) module imports the **real**
+`go.temporal.io/sdk/workflow` and asserts — at compile time — that each
+`Execute*` function still has the `(ctx, target, args...)` shape the analyzer
+relies on. CI builds it against the latest SDK and Dependabot bumps the version,
+so a breaking SDK change shows up as a failed `make conformance` on the bump PR.
+It's its own module so the SDK's large dependency tree never touches the main
+module or the fixtures.
 
 ## Layout
 
@@ -163,6 +180,7 @@ temporalcheck-lint/
 │           ├── go.mod                 # replace go.temporal.io/sdk => ./temporalsdk
 │           ├── good/ bad/ notypes/    # fixture packages (// want assertions)
 │           └── temporalsdk/           # local stub module for the Temporal SDK
+├── conformance/                  # CI-only module: real-SDK contract test (see below)
 ├── .custom-gcl.yml               # custom golangci-lint build config
 ├── .golangci.yml                 # example consumer config (also self-lints this repo)
 ├── Makefile

@@ -9,6 +9,17 @@ updates:
         patterns:
           - "*"
 
+  # Bumps the real Temporal SDK in the conformance module; a breaking signature
+  # change then fails the conformance CI job on the bump PR.
+  - package-ecosystem: gomod
+    directory: "/conformance"
+    schedule:
+      interval: weekly
+    groups:
+      go-dependencies:
+        patterns:
+          - "*"
+
   - package-ecosystem: github-actions
     directory: "/"
     schedule:

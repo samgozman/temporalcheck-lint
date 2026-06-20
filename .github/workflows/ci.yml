@@ -44,6 +44,22 @@ jobs:
           files: coverage.out
           token: ${{ secrets.CODECOV_TOKEN }}
 
+  conformance:
+    name: SDK conformance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v6
+        with:
+          # The real Temporal SDK tracks a recent Go; build with current stable.
+          go-version: stable
+
+      # Fails if the real SDK's Execute* signatures drift from the stub.
+      # Dependabot bumps the SDK, so drift surfaces on the bump PR.
+      - name: Check the stub still matches the real Temporal SDK
+        run: make conformance
+
   lint:
     name: Build plugin & self-lint
     runs-on: ubuntu-latest
