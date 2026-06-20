@@ -12,10 +12,12 @@ import (
 // the patterns below are module-relative package paths.
 
 // TestExecArgs checks the fixture packages: "good" must report nothing; "bad"
-// carries a // want next to each expected diagnostic.
+// and "crosspkg" carry a // want next to each expected diagnostic. "crosspkg"
+// calls an activity defined in a separate nested package.
 func TestExecArgs(t *testing.T) {
 	a := execargs.NewAnalyzer(execargs.Settings{CheckTypes: true})
-	analysistest.Run(t, analysistest.TestData(), a, "temporalcheckfixtures/good", "temporalcheckfixtures/bad")
+	analysistest.Run(t, analysistest.TestData(), a,
+		"temporalcheckfixtures/good", "temporalcheckfixtures/bad", "temporalcheckfixtures/crosspkg")
 }
 
 // TestExecArgs_CheckTypesDisabled: with CheckTypes off, type mismatches are
