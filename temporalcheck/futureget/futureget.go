@@ -23,8 +23,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 )
 
-// tagFutureGet suffixes the diagnostic so it is clear which check produced it --
-// mirroring the execargs/optionsdiscard tags.
+// tagFutureGet suffixes the diagnostic so it is clear which check produced it.
 const tagFutureGet = "future-get"
 
 // Settings configures the futureget analyzer.

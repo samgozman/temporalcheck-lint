@@ -34,7 +34,7 @@ const (
 	workflowInternalPkg = "go.temporal.io/sdk/internal"
 	testEnvType         = "TestWorkflowEnvironment"
 	// tagStringTarget suffixes the production-call diagnostic so it is clear which
-	// check produced it -- mirroring the execargs tags.
+	// check produced it.
 	tagStringTarget = "string-target"
 	// tagStrictTests suffixes the test-mock diagnostic so it is distinct from the
 	// production string-target one and names the setting that surfaced it.

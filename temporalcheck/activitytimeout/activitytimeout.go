@@ -23,8 +23,8 @@ import (
 	"golang.org/x/tools/go/analysis"
 )
 
-// tagRequiredTimeout suffixes the diagnostic so it is clear which check produced
-// it -- mirroring the execargs/stringtarget/optionsdiscard tags.
+// tagRequiredTimeout suffixes the diagnostic so it is clear which check
+// produced it.
 const tagRequiredTimeout = "required-timeout"
 
 // Settings configures the activitytimeout analyzer.

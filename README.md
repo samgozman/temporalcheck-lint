@@ -511,6 +511,81 @@ The message names the **receiver type** and ends with the source `(future-get)`
   `SignalChildWorkflow`) don't return a must-check error and are out of scope.
   `converter.EncodedValues` (plural) is also out of scope.
 
+### `lossynumber`
+
+#### The problem
+
+Temporal serializes activity and workflow arguments and results through its
+`DataConverter`, whose default is JSON. Go's `encoding/json` decodes **every JSON
+number into a `float64`** when the destination type is the empty interface, and a
+`float64` cannot represent integers past 2^53 exactly. So a number carried through
+a dynamically-typed parameter or return — `interface{}`/`any`, `map[string]any`,
+`[]any` — round-trips with silent precision loss:
+
+```go
+// Activity parameter typed `any`: the worker decodes the argument into interface{}.
+func Charge(ctx context.Context, amount any) error { /* ... */ }
+
+var amount int64 = 9007199254740993 // 2^53 + 1
+workflow.ExecuteActivity(ctx, Charge, amount)
+// Inside Charge, amount is float64(9007199254740992) — off by one, no error.
+```
+
+#### What it checks
+
+`lossynumber` resolves the function referenced by each `workflow.ExecuteActivity`,
+`workflow.ExecuteLocalActivity`, `workflow.ExecuteChildWorkflow` and
+`client.ExecuteWorkflow` call to its real signature, then flags any **top-level**
+parameter or **non-error return** whose type is one of those lossy dynamic forms.
+The framework-injected leading context (`context.Context` for activities,
+`workflow.Context` for workflows) and a trailing `error` are skipped. The fix is a
+concrete type:
+
+```go
+func Charge(ctx context.Context, amount int64) error { /* ... */ } // never flagged
+```
+
+The check is **on by default** and pure AST + types. It is deliberately shallow to
+stay false-positive-free:
+
+- A named empty interface (`type Payload interface{}`) counts; a **non-empty**
+  interface (`error`, `io.Reader`, any interface with methods) does not.
+- A struct that merely **contains** an `any` field is **not** flagged — only the
+  top-level parameter/return type, or the element of a top-level `map`/slice, is
+  examined.
+- A string-registered target resolves to no signature and is skipped.
+
+##### Example diagnostics
+
+```
+workflow.go:21  activity "Charge" parameter 1 has dynamic type any; Temporal's JSON converter decodes numbers as float64 and silently loses int64 precision past 2^53 — use a concrete type (lossy-types)
+```
+
+The message names the **target** and the offending parameter/return and ends with
+the source `(lossy-types)` (golangci-lint then appends the linter name,
+`(lossynumber)`, after that).
+
+#### Settings
+
+| Key        | Type | Default | Description                                      |
+|------------|------|---------|--------------------------------------------------|
+| `disabled` | bool | `false` | Turn the `lossynumber` analyzer off entirely      |
+
+Disable it only for the rare case of a custom `DataConverter` that preserves
+integer precision (e.g. one that decodes numbers into `json.Number` or `int64`).
+
+#### Limitations
+
+- **Top-level only.** Lossy types nested inside a struct field, or below the first
+  level of a `map`/slice (e.g. `[][]any`), are not flagged — that would risk false
+  positives on types that never actually carry a number.
+- **Resolvable targets only.** A target registered and executed by its string name
+  has no static signature, so it is skipped (the [`stringtarget`](#stringtarget)
+  analyzer addresses string targets directly).
+- **Execution sites.** The signature is inspected wherever the function is passed
+  to an `Execute*`/`client.ExecuteWorkflow` call; an activity that is registered
+  but never executed in the analyzed code is not reached.
+
 ## Development
 
 ```bash
@@ -584,12 +659,20 @@ temporalcheck-lint/
 │   │   ├── activitytimeout_internal_test.go
 │   │   ├── nolint_internal_test.go
 │   │   └── testdata/             # self-contained fixture module
-│   └── futureget/                # flag discarded Future/EncodedValue .Get errors
-│       ├── futureget.go          # settings, analyzer, discard dispatch
-│       ├── check.go              # receiver-type matching helpers
+│   ├── futureget/                # flag discarded Future/EncodedValue .Get errors
+│   │   ├── futureget.go          # settings, analyzer, discard dispatch
+│   │   ├── check.go              # receiver-type matching helpers
+│   │   ├── nolint.go             # //nolint directive suppression
+│   │   ├── futureget_test.go     # analysistest
+│   │   ├── futureget_internal_test.go
+│   │   ├── nolint_internal_test.go
+│   │   └── testdata/             # self-contained fixture module
+│   └── lossynumber/              # flag dynamic-typed (any) activity/workflow params/returns
+│       ├── lossynumber.go        # settings, analyzer, call dispatch
+│       ├── check.go              # signature inspection + lossy-type predicate
 │       ├── nolint.go             # //nolint directive suppression
-│       ├── futureget_test.go     # analysistest
-│       ├── futureget_internal_test.go
+│       ├── lossynumber_test.go   # analysistest
+│       ├── lossynumber_internal_test.go
 │       ├── nolint_internal_test.go
 │       └── testdata/             # self-contained fixture module
 ├── conformance/                  # CI-only module: real-SDK contract test (see below)

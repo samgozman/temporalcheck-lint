@@ -4,7 +4,7 @@ import "context"
 
 type Activities struct{}
 
-// TransferParams and FairTransferParams mirror the real-world case: distinct
+// TransferParams and EnrichedTransferParams mirror a common case: distinct
 // structs that share most fields, differing only at the edges.
 type TransferParams struct {
 	SourceAccountID string
@@ -13,14 +13,14 @@ type TransferParams struct {
 	OnlyOnSource    bool
 }
 
-type FairTransferParams struct {
+type EnrichedTransferParams struct {
 	SourceAccountID string
 	Amount          int
 	ReferenceID     string
 	OnlyOnTarget    *string
 }
 
-func (a *Activities) CreateTransfer(ctx context.Context, p *FairTransferParams) error { return nil }
+func (a *Activities) CreateTransfer(ctx context.Context, p *EnrichedTransferParams) error { return nil }
 
 // TargetParams is the wanted shape for the conflict and no-overlap cases.
 type TargetParams struct {

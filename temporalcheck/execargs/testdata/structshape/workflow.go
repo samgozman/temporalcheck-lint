@@ -10,7 +10,7 @@ func Workflow(ctx workflow.Context) error {
 
 	// Wire-compatible but distinct: drops a source-only field and leaves a
 	// target-only field unset.
-	_ = workflow.ExecuteActivity(ctx, a.CreateTransfer, &TransferParams{}) // want `ExecuteActivity: arg 1 of "CreateTransfer" sends \*structshape.TransferParams, target wants \*structshape.FairTransferParams — serializes by field name but drops \{OnlyOnSource\} and leaves \{OnlyOnTarget\} unset \(strict-struct-shape\)`
+	_ = workflow.ExecuteActivity(ctx, a.CreateTransfer, &TransferParams{}) // want `ExecuteActivity: arg 1 of "CreateTransfer" sends \*structshape.TransferParams, target wants \*structshape.EnrichedTransferParams — serializes by field name but drops \{OnlyOnSource\} and leaves \{OnlyOnTarget\} unset \(strict-struct-shape\)`
 
 	// Shared field with an incompatible type: a hard error, tagged strict-types
 	// even though struct-shape surfaced it.

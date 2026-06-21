@@ -10,6 +10,7 @@ import (
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/activitytimeout"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/execargs"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/futureget"
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/lossynumber"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/optionsdiscard"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/stringtarget"
 )
@@ -27,6 +28,7 @@ type Settings struct {
 	OptionsDiscard  OptionsDiscardSettings  `json:"optionsdiscard"`
 	ActivityTimeout ActivityTimeoutSettings `json:"activitytimeout"`
 	FutureGet       FutureGetSettings       `json:"futureget"`
+	LossyNumber     LossyNumberSettings     `json:"lossynumber"`
 }
 
 // ExecargsSettings configures the execargs analyzer. Pointers distinguish
@@ -110,6 +112,18 @@ type FutureGetSettings struct {
 	Disabled *bool `json:"disabled"`
 }
 
+// LossyNumberSettings configures the lossynumber analyzer, which flags
+// interface{}/any, map[string]any and []any as activity/workflow parameter or
+// return types -- where Temporal's JSON converter decodes numbers as float64 and
+// silently loses int64 precision past 2^53.
+type LossyNumberSettings struct {
+	// Disabled turns the analyzer off entirely (default false). The check is on by
+	// default: a dynamically-typed number silently corrupts past 2^53, a latent
+	// data-loss bug, so there is nothing to opt into. Disable it only for the rare
+	// case of a custom DataConverter that preserves integer precision.
+	Disabled *bool `json:"disabled"`
+}
+
 type plugin struct {
 	settings Settings
 }
@@ -165,6 +179,10 @@ func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 	if p.settings.FutureGet.Disabled != nil {
 		futureGetDisabled = *p.settings.FutureGet.Disabled
 	}
+	lossyNumberDisabled := false
+	if p.settings.LossyNumber.Disabled != nil {
+		lossyNumberDisabled = *p.settings.LossyNumber.Disabled
+	}
 	return []*analysis.Analyzer{
 		execargs.NewAnalyzer(execargs.Settings{
 			Disabled:       disabled,
@@ -185,6 +203,9 @@ func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 		}),
 		futureget.NewAnalyzer(futureget.Settings{
 			Disabled: futureGetDisabled,
+		}),
+		lossynumber.NewAnalyzer(lossynumber.Settings{
+			Disabled: lossyNumberDisabled,
 		}),
 		// Future Temporal analyzers (e.g. registration coverage, retry-policy
 		// sanity, non-determinism heuristics) plug in here.

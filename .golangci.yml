@@ -60,3 +60,10 @@ linters:
             # statement or `_ =`), silently swallowing an activity, child-workflow
             # or decode failure. On by default; set true to turn it off.
             disabled: false
+          lossynumber:
+            # Flag interface{}/any, map[string]any and []any as a top-level
+            # activity/workflow parameter or return type. Temporal's JSON converter
+            # decodes numbers as float64, so an int64 past 2^53 silently loses
+            # precision. On by default; set true to turn it off (e.g. for a custom
+            # converter that preserves integer precision).
+            disabled: false

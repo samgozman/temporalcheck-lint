@@ -83,10 +83,27 @@ Initial proof of concept.
   type that merely embeds `Future` is conservatively skipped. Pure AST + types and
   near-zero false positives, so it runs by default (errcheck-style); diagnostics
   are tagged `(future-get)`. Turn it off via the `futureget.disabled` setting.
+- `lossynumber` analyzer (on by default): flags `interface{}`/`any`,
+  `map[string]any` and `[]any` appearing as a top-level **parameter or return
+  type** of an activity or workflow. Temporal's default `DataConverter` is JSON,
+  and `encoding/json` decodes every number into a `float64` when the destination
+  is the empty interface — so an `int64` past 2^53 round-trips with silent
+  precision loss. The analyzer resolves the function referenced by each
+  `workflow.ExecuteActivity`/`ExecuteLocalActivity`/`ExecuteChildWorkflow` and
+  `client.ExecuteWorkflow` call to its real signature, skips the injected leading
+  context and the trailing `error`, and reports any remaining parameter or return
+  whose type is one of those lossy forms (a named empty interface counts; a
+  non-empty interface such as `error` does not). The check is intentionally
+  shallow — a struct that merely contains an `any` field is not flagged — so it
+  stays false-positive-free; string-registered targets are skipped. Pure AST +
+  types, so it runs by default; diagnostics are tagged `(lossy-types)`. Turn it
+  off via the `lossynumber.disabled` setting (e.g. for a custom converter that
+  preserves integer precision).
 - Hermetic, offline `analysistest` fixtures: `testdata/` is a self-contained
   module that resolves `go.temporal.io/sdk` via a local stub, so it resolves in
   IDEs without pulling the real SDK.
 - `conformance/` module: a compile-time contract test that builds against the
   real Temporal SDK in CI, catching any drift between the stub and the SDK's
-  `Execute*`, `testsuite` `OnActivity`/`OnWorkflow`, `With*Options`, and
-  `Future`/`ChildWorkflowFuture`/`EncodedValue` `.Get` signatures.
+  `Execute*`, `client.ExecuteWorkflow`, `testsuite` `OnActivity`/`OnWorkflow`,
+  `With*Options`, and `Future`/`ChildWorkflowFuture`/`EncodedValue` `.Get`
+  signatures.

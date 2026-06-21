@@ -29,7 +29,7 @@ import (
 const (
 	workflowPkg = "go.temporal.io/sdk/workflow"
 	// tagOptionsDiscard suffixes the diagnostic so it is clear which check
-	// produced it -- mirroring the execargs/stringtarget tags.
+	// produced it.
 	tagOptionsDiscard = "options-discard"
 )
 

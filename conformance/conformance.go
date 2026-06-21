@@ -5,6 +5,9 @@
 package conformance
 
 import (
+	"context"
+
+	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/workflow"
@@ -61,3 +64,12 @@ var (
 	_ func(workflow.ChildWorkflowFuture, workflow.Context, interface{}) error = workflow.ChildWorkflowFuture.Get
 	_ func(converter.EncodedValue, interface{}) error                         = converter.EncodedValue.Get
 )
+
+// lossynumber resolves the workflow target of client.ExecuteWorkflow, read as
+// (ctx, options, target, args...). This method expression stops compiling if the
+// real SDK changes that shape or moves ExecuteWorkflow off client.Client — the
+// cue to update the stub and the check's client entry; keep the client stub at
+// testdata/temporalsdk in sync.
+var temporalClient client.Client
+
+var _ func(context.Context, client.StartWorkflowOptions, interface{}, ...interface{}) (client.WorkflowRun, error) = temporalClient.ExecuteWorkflow
