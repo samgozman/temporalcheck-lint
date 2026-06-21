@@ -3,7 +3,10 @@ package execargs
 import (
 	"go/ast"
 	"go/token"
+	"go/types"
 	"testing"
+
+	"golang.org/x/tools/go/analysis"
 )
 
 func TestArgWord(t *testing.T) {
@@ -41,6 +44,102 @@ func TestTargetName(t *testing.T) {
 			t.Errorf("%s: targetName = %q, want %q", tt.name, got, tt.want)
 		}
 	}
+}
+
+func TestJSONName(t *testing.T) {
+	tests := []struct {
+		name     string
+		goName   string
+		tag      string
+		wantName string
+		wantOK   bool
+	}{
+		{"no tag", "Field", "", "Field", true},
+		{"renamed", "Field", `json:"renamed"`, "renamed", true},
+		{"renamed with option", "Field", `json:"renamed,omitempty"`, "renamed", true},
+		{"empty name with option", "Field", `json:",omitempty"`, "Field", true},
+		{"skipped", "Field", `json:"-"`, "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := jsonName(tt.goName, tt.tag)
+			if got != tt.wantName || ok != tt.wantOK {
+				t.Errorf("jsonName(%q, %q) = (%q, %v), want (%q, %v)",
+					tt.goName, tt.tag, got, ok, tt.wantName, tt.wantOK)
+			}
+		})
+	}
+}
+
+func TestDriftPhrase(t *testing.T) {
+	tests := []struct {
+		name string
+		diff structDiff
+		want string
+	}{
+		{"drops only", structDiff{drops: []string{"Secret"}},
+			"serializes by field name but drops {Secret}"},
+		{"unset only", structDiff{unset: []string{"Extra"}},
+			"serializes by field name but leaves {Extra} unset"},
+		{"drops and unset", structDiff{drops: []string{"A"}, unset: []string{"B"}},
+			"serializes by field name but drops {A} and leaves {B} unset"},
+		{"identical", structDiff{},
+			"has identical fields but is a distinct Go type"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := driftPhrase(tt.diff); got != tt.want {
+				t.Errorf("driftPhrase = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestNamedAlias covers the *types.Alias arm of named, which the analysistest
+// fixtures never reach (the test SDK stub resolves workflow.Context to its
+// internal named type).
+func TestNamedAlias(t *testing.T) {
+	pkg := types.NewPackage("example.com/foo", "foo")
+	tn := types.NewTypeName(token.NoPos, pkg, "Bar", nil)
+	alias := types.NewAlias(tn, types.Typ[types.Int])
+
+	if !named(alias, "example.com/foo", "Bar") {
+		t.Error("named did not match the alias by package path and name")
+	}
+	if named(alias, "example.com/foo", "Other") {
+		t.Error("named matched the wrong name")
+	}
+}
+
+// TestIsWorkflowContextDirect covers the fallback in isWorkflowContext for a
+// Context type declared directly in the public workflow package (rather than as
+// an alias to the internal type, which the stub uses).
+func TestIsWorkflowContextDirect(t *testing.T) {
+	pkg := types.NewPackage(workflowPkg, "workflow")
+	tn := types.NewTypeName(token.NoPos, pkg, "Context", nil)
+	ctxType := types.NewNamed(tn, types.NewStruct(nil, nil), nil)
+
+	if !isWorkflowContext(ctxType) {
+		t.Error("isWorkflowContext did not recognize Context declared in the workflow package")
+	}
+}
+
+// TestSkipCountNoParams covers the zero-parameter guard in skipCount.
+func TestSkipCountNoParams(t *testing.T) {
+	sig := types.NewSignatureType(nil, nil, nil, types.NewTuple(), types.NewTuple(), false)
+	if got := skipCount(sig, kindActivity); got != 0 {
+		t.Errorf("skipCount(no params) = %d, want 0", got)
+	}
+}
+
+// TestCheckAssignableNilType covers the nil-type guard: when the argument has no
+// resolved type, checkAssignable returns without reporting.
+func TestCheckAssignableNilType(t *testing.T) {
+	pass := &analysis.Pass{TypesInfo: &types.Info{}}
+	c := &checker{strictTypes: true}
+	// An identifier absent from the (empty) TypesInfo resolves to a nil type, so
+	// the guard returns before any Reportf (which would need a Fset and panic).
+	c.checkAssignable(pass, &ast.Ident{Name: "x"}, "ExecuteActivity", "fn", 1, types.Typ[types.String])
 }
 
 func TestNewAnalyzerMetadata(t *testing.T) {

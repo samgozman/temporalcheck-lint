@@ -40,10 +40,9 @@ func (c *checker) checkSignature(
 		return
 	}
 
+	// skip is 0 or 1, and is 1 only when params has a leading parameter to skip,
+	// so want is never negative.
 	want := params.Len() - skip
-	if want < 0 {
-		want = 0
-	}
 	if len(args) != want {
 		pass.Reportf(call.Lparen, "%s: %s %q expects %d %s, got %d (%s)",
 			entry, noun(k), name, want, argWord(want), len(args), tagArity)
@@ -71,10 +70,9 @@ func (c *checker) checkVariadic(
 ) {
 	params := sig.Params()
 	variadicIdx := params.Len() - 1 // the variadic parameter is always last
+	// skip never lands on the variadic parameter itself (the injected context is
+	// a leading fixed parameter), so fixed is never negative.
 	fixed := variadicIdx - skip
-	if fixed < 0 {
-		fixed = 0
-	}
 
 	if len(args) < fixed {
 		pass.Reportf(call.Lparen, "%s: %s %q expects at least %d %s, got %d (%s)",
@@ -87,11 +85,8 @@ func (c *checker) checkVariadic(
 	for i := 0; i < fixed; i++ {
 		c.checkAssignable(pass, args[i], entry, name, i+1, params.At(skip+i).Type())
 	}
-	slice, ok := params.At(variadicIdx).Type().(*types.Slice)
-	if !ok {
-		return
-	}
-	elem := slice.Elem()
+	// A variadic parameter's type is always a slice, so this assertion holds.
+	elem := params.At(variadicIdx).Type().(*types.Slice).Elem()
 	for i := fixed; i < len(args); i++ {
 		c.checkAssignable(pass, args[i], entry, name, i+1, elem)
 	}

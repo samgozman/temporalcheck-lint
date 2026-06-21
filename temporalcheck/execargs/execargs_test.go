@@ -65,6 +65,14 @@ func TestExecArgs_NolintFile(t *testing.T) {
 	analysistest.Run(t, analysistest.TestData(), a, "temporalcheckfixtures/nolintfile")
 }
 
+// TestExecArgs_Benign: call shapes the analyzer must ignore -- a non-selector
+// call, a selector into another package, a non-entry-point workflow function,
+// and a zero-parameter activity target -- produce no diagnostics.
+func TestExecArgs_Benign(t *testing.T) {
+	a := execargs.NewAnalyzer(execargs.Settings{StrictTypes: true})
+	analysistest.Run(t, analysistest.TestData(), a, "temporalcheckfixtures/benign")
+}
+
 // TestExecArgs_Disabled: with Disabled set, the analyzer reports nothing even on
 // a fixture that carries a real arity violation.
 func TestExecArgs_Disabled(t *testing.T) {

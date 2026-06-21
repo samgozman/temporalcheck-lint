@@ -147,12 +147,8 @@ func (c *checker) checkCall(pass *analysis.Pass, nolint nolintInfo, call *ast.Ca
 		return
 	}
 
-	// Shape is always (ctx, target, args...). Fewer than two arguments is a
-	// compile error the compiler already reports.
-	if len(call.Args) < 2 {
-		return
-	}
-
+	// Shape is always (ctx, target, args...); a compiling Execute* call therefore
+	// has at least two arguments, so call.Args[1] is safe to read.
 	sig, ok := pass.TypesInfo.TypeOf(call.Args[1]).(*types.Signature)
 	if !ok {
 		// Target is registered by its string name, or is a value we can't
