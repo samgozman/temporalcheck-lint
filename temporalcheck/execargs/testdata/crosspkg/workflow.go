@@ -14,10 +14,10 @@ func Workflow(ctx workflow.Context) error {
 
 	// Wrong arity must still be caught — proof the cross-package signature was
 	// resolved, not skipped.
-	_ = workflow.ExecuteActivity(ctx, a.Charge, "user-1") // want `ExecuteActivity: activity "Charge" expects 2 arguments, got 1`
+	_ = workflow.ExecuteActivity(ctx, a.Charge, "user-1") // want `ExecuteActivity: activity "Charge" expects 2 arguments, got 1 \(arity\)`
 
 	// Wrong type on the cross-package activity.
-	_ = workflow.ExecuteActivity(ctx, a.Charge, "user-1", "free") // want `ExecuteActivity: arg 2 of "Charge" has type (untyped )?string, want int`
+	_ = workflow.ExecuteActivity(ctx, a.Charge, "user-1", "free") // want `ExecuteActivity: arg 2 of "Charge" has type (untyped )?string, want int \(strict-types\)`
 
 	return nil
 }

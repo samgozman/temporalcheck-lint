@@ -57,16 +57,20 @@ So for `Greet(ctx context.Context, name string)`, the checker expects exactly
 ### Example diagnostics
 
 ```
-workflow.go:14  ExecuteActivity: activity "Greet" expects 1 argument, got 0
-workflow.go:17  ExecuteActivity: activity "Greet" expects 1 argument, got 2
-workflow.go:20  ExecuteActivity: arg 1 of "Greet" has type int, want string
-workflow.go:23  ExecuteActivity: arg 2 of "ProcessOrder" has type string, want int
-workflow.go:38  ExecuteChildWorkflow: child workflow "ShipmentWorkflow" expects 1 argument, got 0
+workflow.go:14  ExecuteActivity: activity "Greet" expects 1 argument, got 0 (arity)
+workflow.go:17  ExecuteActivity: activity "Greet" expects 1 argument, got 2 (arity)
+workflow.go:20  ExecuteActivity: arg 1 of "Greet" has type int, want string (strict-types)
+workflow.go:23  ExecuteActivity: arg 2 of "ProcessOrder" has type string, want int (strict-types)
+workflow.go:30  ExecuteActivity: arg 1 of "Save" has type []*Tier, want []Tier (strict-pointers)
+workflow.go:38  ExecuteChildWorkflow: child workflow "ShipmentWorkflow" expects 1 argument, got 0 (arity)
 ```
 
-The message names the **entry point** (golangci-lint already appends the linter
-name, e.g. `(execargs)`). `arg N` numbers the arguments **you write at the call
-site** (after the target), not the target's parameter positions.
+The message names the **entry point** and ends with the **source** in
+parentheses — `(arity)`, `(strict-types)`, or `(strict-pointers)` — so you can
+see which check fired and which setting controls it (golangci-lint then appends
+the linter name, e.g. `(execargs)`, after that). `arg N` numbers the arguments
+**you write at the call site** (after the target), not the target's parameter
+positions.
 
 ## Use it as a golangci-lint plugin
 

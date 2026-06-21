@@ -7,6 +7,15 @@ import (
 	"golang.org/x/tools/go/analysis"
 )
 
+// Diagnostics are suffixed with the source that produced them, so it is clear
+// which setting controls a given report. "arity" is the always-on baseline; the
+// others name the opt-in setting that surfaced the mismatch.
+const (
+	tagArity          = "arity"
+	tagStrictTypes    = "strict-types"
+	tagStrictPointers = "strict-pointers"
+)
+
 // checkSignature matches the call-site arguments against the resolved target
 // signature, accounting for the framework-injected leading parameter.
 func (c *checker) checkSignature(
@@ -31,8 +40,8 @@ func (c *checker) checkSignature(
 		want = 0
 	}
 	if len(args) != want {
-		pass.Reportf(call.Lparen, "%s: %s %q expects %d %s, got %d",
-			entry, noun(k), name, want, argWord(want), len(args))
+		pass.Reportf(call.Lparen, "%s: %s %q expects %d %s, got %d (%s)",
+			entry, noun(k), name, want, argWord(want), len(args), tagArity)
 		return
 	}
 	if !c.strictTypes {
@@ -63,8 +72,8 @@ func (c *checker) checkVariadic(
 	}
 
 	if len(args) < fixed {
-		pass.Reportf(call.Lparen, "%s: %s %q expects at least %d %s, got %d",
-			entry, noun(k), name, fixed, argWord(fixed), len(args))
+		pass.Reportf(call.Lparen, "%s: %s %q expects at least %d %s, got %d (%s)",
+			entry, noun(k), name, fixed, argWord(fixed), len(args), tagArity)
 		return
 	}
 	if !c.strictTypes {
@@ -88,25 +97,22 @@ func (c *checker) checkAssignable(pass *analysis.Pass, arg ast.Expr, entry, name
 	if got == nil || want == nil {
 		return
 	}
-	if c.compatible(got, want) {
+	if types.AssignableTo(got, want) {
 		return
 	}
-	pass.Reportf(arg.Pos(), "%s: arg %d of %q has type %s, want %s",
-		entry, pos, name, typeStr(got), typeStr(want))
-}
-
-// compatible reports whether an argument of type got may be passed where want is
-// expected. Unless StrictPointers is set, a single layer of pointer indirection
-// is ignored on the value and on slice elements, since Temporal's DataConverter
-// serializes T and *T (and []T and []*T) to the same wire form.
-func (c *checker) compatible(got, want types.Type) bool {
-	if types.AssignableTo(got, want) {
-		return true
+	// Attribute the mismatch to the setting that surfaced it, so the message
+	// tells you which knob to turn. A difference that is only pointer indirection
+	// (T vs *T, []T vs []*T) is allowed unless StrictPointers is set; anything
+	// else is a genuine type mismatch under StrictTypes.
+	setting := tagStrictTypes
+	if pointerInsensitiveMatch(got, want) {
+		if !c.strictPointers {
+			return
+		}
+		setting = tagStrictPointers
 	}
-	if c.strictPointers {
-		return false
-	}
-	return pointerInsensitiveMatch(got, want)
+	pass.Reportf(arg.Pos(), "%s: arg %d of %q has type %s, want %s (%s)",
+		entry, pos, name, typeStr(got), typeStr(want), setting)
 }
 
 func pointerInsensitiveMatch(got, want types.Type) bool {

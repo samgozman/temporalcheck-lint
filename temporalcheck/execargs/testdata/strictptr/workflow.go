@@ -16,16 +16,16 @@ func Workflow(ctx workflow.Context) error {
 	_ = workflow.ExecuteActivity(ctx, a.SavePointers, []*Payload{})
 
 	// Struct expected, pointer given.
-	_ = workflow.ExecuteActivity(ctx, a.SaveValue, &p) // want `ExecuteActivity: arg 1 of "SaveValue" has type \*strictptr.Payload, want strictptr.Payload`
+	_ = workflow.ExecuteActivity(ctx, a.SaveValue, &p) // want `ExecuteActivity: arg 1 of "SaveValue" has type \*strictptr.Payload, want strictptr.Payload \(strict-pointers\)`
 
 	// Pointer expected, struct value given.
-	_ = workflow.ExecuteActivity(ctx, a.SavePointer, p) // want `ExecuteActivity: arg 1 of "SavePointer" has type strictptr.Payload, want \*strictptr.Payload`
+	_ = workflow.ExecuteActivity(ctx, a.SavePointer, p) // want `ExecuteActivity: arg 1 of "SavePointer" has type strictptr.Payload, want \*strictptr.Payload \(strict-pointers\)`
 
 	// []struct expected, []pointer given.
-	_ = workflow.ExecuteActivity(ctx, a.SaveValues, []*Payload{}) // want `ExecuteActivity: arg 1 of "SaveValues" has type \[\]\*strictptr.Payload, want \[\]strictptr.Payload`
+	_ = workflow.ExecuteActivity(ctx, a.SaveValues, []*Payload{}) // want `ExecuteActivity: arg 1 of "SaveValues" has type \[\]\*strictptr.Payload, want \[\]strictptr.Payload \(strict-pointers\)`
 
 	// []pointer expected, []struct given.
-	_ = workflow.ExecuteActivity(ctx, a.SavePointers, []Payload{}) // want `ExecuteActivity: arg 1 of "SavePointers" has type \[\]strictptr.Payload, want \[\]\*strictptr.Payload`
+	_ = workflow.ExecuteActivity(ctx, a.SavePointers, []Payload{}) // want `ExecuteActivity: arg 1 of "SavePointers" has type \[\]strictptr.Payload, want \[\]\*strictptr.Payload \(strict-pointers\)`
 
 	return nil
 }

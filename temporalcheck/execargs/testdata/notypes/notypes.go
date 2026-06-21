@@ -28,7 +28,7 @@ func Workflow(ctx workflow.Context) error {
 	_ = workflow.ExecuteActivity(ctx, a.Tag, 1, 2)
 
 	// Arity is always checked, regardless of strict-types.
-	_ = workflow.ExecuteActivity(ctx, a.Greet) // want `ExecuteActivity: activity "Greet" expects 1 argument, got 0`
+	_ = workflow.ExecuteActivity(ctx, a.Greet) // want `ExecuteActivity: activity "Greet" expects 1 argument, got 0 \(arity\)`
 
 	return nil
 }
