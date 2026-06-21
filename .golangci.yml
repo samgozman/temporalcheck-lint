@@ -16,6 +16,9 @@ linters:
         settings:
           # Settings are grouped per analyzer.
           execargs:
+            # Turn the analyzer off entirely without unwiring the plugin
+            # (default false). Useful once more analyzers share this plugin.
+            disabled: false
             # Verify argument types in addition to argument count (default false).
             # Opt in; arity is always checked and is the false-positive-free part.
             strict-types: true

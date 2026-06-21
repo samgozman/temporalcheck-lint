@@ -118,6 +118,7 @@ linter grows:
 ```yaml
 settings:
   execargs:
+    disabled: false
     strict-types: true
     strict-pointers: false
     strict-struct-shape: false
@@ -130,6 +131,7 @@ The three checks below are independent, opt-in layers — enable any combination
 
 | Key                   | Type | Default | Description                                                                                       |
 |-----------------------|------|---------|---------------------------------------------------------------------------------------------------|
+| `disabled`            | bool | `false` | Turn the `execargs` analyzer off entirely — it reports nothing regardless of the keys below        |
 | `strict-types`        | bool | `false` | Also check argument *types*, not just the argument count                                           |
 | `strict-pointers`     | bool | `false` | Flag a value passed where a pointer is expected (and vice versa), including `[]T` vs `[]*T`        |
 | `strict-struct-shape` | bool | `false` | Flag passing one struct type where a *different* struct type is wanted                             |
@@ -150,6 +152,27 @@ type, or no shared fields at all, is reported as a `strict-types` error instead.
 The three settings are orthogonal: each can be enabled on its own (e.g.
 `strict-struct-shape` without `strict-types`), and every diagnostic is tagged
 with the setting that produced it.
+
+### Suppressing with `//nolint`
+
+`execargs` honors `//nolint` directives itself, so a single call can be exempted
+whether you run it under golangci-lint or standalone. golangci-lint exposes this
+plugin under the name **`temporalcheck`** (not the analyzer name `execargs`), so
+that is the name to use. A directive suppresses the call when it is bare
+(`//nolint`), names `all`, or names `temporalcheck`:
+
+```go
+// Suppress one call (anchor the directive anywhere on the call's lines):
+_ = workflow.ExecuteActivity(ctx, a.Greet) //nolint:temporalcheck // registered by name elsewhere
+
+// Suppress an entire file: put the directive before the package clause:
+//nolint:temporalcheck
+package worker
+```
+
+A directive that names only other linters (e.g. `//nolint:gocritic`), or the
+analyzer name `execargs`, does not suppress this linter. To turn `execargs` off
+across the whole project, use the `disabled` setting instead.
 
 ## How it works
 
@@ -227,8 +250,10 @@ temporalcheck-lint/
 │   └── execargs/
 │       ├── execargs.go           # settings, analyzer, call dispatch
 │       ├── check.go              # signature matching + helpers
+│       ├── nolint.go             # //nolint directive suppression
 │       ├── execargs_test.go      # analysistest
 │       ├── execargs_internal_test.go
+│       ├── nolint_internal_test.go
 │       └── testdata/                  # self-contained fixture module (see below)
 │           ├── go.mod                 # replace go.temporal.io/sdk => ./temporalsdk
 │           ├── good/ bad/ notypes/    # fixture packages (// want assertions)

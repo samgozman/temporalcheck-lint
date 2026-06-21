@@ -24,6 +24,9 @@ type Settings struct {
 // ExecargsSettings configures the execargs analyzer. Pointers distinguish
 // "unset" (use the default) from an explicit false.
 type ExecargsSettings struct {
+	// Disabled turns the analyzer off entirely (default false).
+	Disabled *bool `json:"disabled"`
+
 	// The three checks below are independent, opt-in layers on top of the
 	// always-on arity check; each defaults to false when unset.
 
@@ -61,6 +64,10 @@ func New(raw any) (register.LinterPlugin, error) {
 }
 
 func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
+	disabled := false
+	if p.settings.Execargs.Disabled != nil {
+		disabled = *p.settings.Execargs.Disabled
+	}
 	strictTypes := false
 	if p.settings.Execargs.StrictTypes != nil {
 		strictTypes = *p.settings.Execargs.StrictTypes
@@ -75,6 +82,7 @@ func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 	}
 	return []*analysis.Analyzer{
 		execargs.NewAnalyzer(execargs.Settings{
+			Disabled:       disabled,
 			StrictTypes:    strictTypes,
 			StrictPointers: strictPointers,
 			StructShape:    structShape,

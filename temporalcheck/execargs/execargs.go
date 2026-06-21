@@ -28,6 +28,9 @@ const (
 // independent, opt-in layers on top of the always-on arity check; enabling any
 // of them turns on the per-argument type comparison.
 type Settings struct {
+	// Disabled turns the analyzer off entirely; it reports nothing.
+	Disabled bool
+
 	// StrictTypes verifies argument types, not just their count -- a genuine
 	// mismatch such as int where string is wanted. Temporal serializes arguments
 	// through its DataConverter, so Go-level assignability is stricter than the
@@ -70,6 +73,7 @@ var entryPoints = map[string]kind{
 // NewAnalyzer builds the execargs analyzer for the given settings.
 func NewAnalyzer(settings Settings) *analysis.Analyzer {
 	c := &checker{
+		disabled:       settings.Disabled,
 		strictTypes:    settings.StrictTypes,
 		strictPointers: settings.StrictPointers,
 		structShape:    settings.StructShape,
@@ -85,6 +89,7 @@ func NewAnalyzer(settings Settings) *analysis.Analyzer {
 // checker threads the analyzer settings through the AST walk so the analyzer
 // stays free of package-level mutable state.
 type checker struct {
+	disabled       bool
 	strictTypes    bool
 	strictPointers bool
 	structShape    bool
@@ -97,10 +102,14 @@ func (c *checker) typeChecksEnabled() bool {
 }
 
 func (c *checker) run(pass *analysis.Pass) (any, error) {
+	if c.disabled {
+		return nil, nil
+	}
 	for _, file := range pass.Files {
+		nolint := collectNolint(pass.Fset, file)
 		ast.Inspect(file, func(n ast.Node) bool {
 			if call, ok := n.(*ast.CallExpr); ok {
-				c.checkCall(pass, call)
+				c.checkCall(pass, nolint, call)
 			}
 			return true
 		})
@@ -108,7 +117,7 @@ func (c *checker) run(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
-func (c *checker) checkCall(pass *analysis.Pass, call *ast.CallExpr) {
+func (c *checker) checkCall(pass *analysis.Pass, nolint nolintInfo, call *ast.CallExpr) {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
 		return
@@ -122,6 +131,13 @@ func (c *checker) checkCall(pass *analysis.Pass, call *ast.CallExpr) {
 	}
 	k, ok := entryPoints[fn.Name()]
 	if !ok {
+		return
+	}
+
+	// Honor //nolint directives ourselves so suppression works the same way it
+	// does in standalone/analysistest runs, not only under golangci-lint. Checked
+	// after confirming this is an Execute* call, so unrelated calls cost nothing.
+	if nolint.suppressesCall(pass.Fset, call) {
 		return
 	}
 

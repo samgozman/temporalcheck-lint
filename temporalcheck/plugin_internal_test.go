@@ -9,6 +9,7 @@ import (
 func TestNew(t *testing.T) {
 	p, err := New(map[string]any{
 		"execargs": map[string]any{
+			"disabled":            false,
 			"strict-types":        true,
 			"strict-pointers":     true,
 			"strict-struct-shape": true,
@@ -43,6 +44,24 @@ func TestNew_Defaults(t *testing.T) {
 	}
 	if _, err := p.BuildAnalyzers(); err != nil {
 		t.Fatalf("BuildAnalyzers: %v", err)
+	}
+}
+
+func TestNew_Disabled(t *testing.T) {
+	// disabled: true must still build the analyzer (the plugin stays wired); the
+	// analyzer itself reports nothing.
+	p, err := New(map[string]any{
+		"execargs": map[string]any{"disabled": true},
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	analyzers, err := p.BuildAnalyzers()
+	if err != nil {
+		t.Fatalf("BuildAnalyzers: %v", err)
+	}
+	if len(analyzers) != 1 {
+		t.Fatalf("BuildAnalyzers returned %d analyzers, want 1", len(analyzers))
 	}
 }
 
