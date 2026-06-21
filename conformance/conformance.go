@@ -5,6 +5,7 @@
 package conformance
 
 import (
+	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/workflow"
 )
@@ -48,4 +49,15 @@ var (
 	_ = workflow.ActivityOptions{}.ScheduleToCloseTimeout
 	_ = workflow.LocalActivityOptions{}.StartToCloseTimeout
 	_ = workflow.LocalActivityOptions{}.ScheduleToCloseTimeout
+)
+
+// futureget reads the Get method off each result type whose returned error must
+// not be discarded. These interface method expressions stop compiling if the
+// real SDK renames Get, drops it from one of these types, or changes its
+// signature (Future/ChildWorkflowFuture take a ctx; EncodedValue does not) — the
+// cue to update the stub and the check's receiverTypes map.
+var (
+	_ func(workflow.Future, workflow.Context, interface{}) error              = workflow.Future.Get
+	_ func(workflow.ChildWorkflowFuture, workflow.Context, interface{}) error = workflow.ChildWorkflowFuture.Get
+	_ func(converter.EncodedValue, interface{}) error                         = converter.EncodedValue.Get
 )

@@ -54,3 +54,9 @@ linters:
             # which Temporal rejects at run time. On by default; set true to turn
             # it off.
             disabled: false
+          futureget:
+            # Flag a .Get on a workflow.Future/ChildWorkflowFuture/
+            # converter.EncodedValue whose returned error is discarded (a bare
+            # statement or `_ =`), silently swallowing an activity, child-workflow
+            # or decode failure. On by default; set true to turn it off.
+            disabled: false

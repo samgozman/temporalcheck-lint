@@ -9,6 +9,7 @@ import (
 
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/activitytimeout"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/execargs"
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/futureget"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/optionsdiscard"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/stringtarget"
 )
@@ -25,6 +26,7 @@ type Settings struct {
 	StringTarget    StringTargetSettings    `json:"stringtarget"`
 	OptionsDiscard  OptionsDiscardSettings  `json:"optionsdiscard"`
 	ActivityTimeout ActivityTimeoutSettings `json:"activitytimeout"`
+	FutureGet       FutureGetSettings       `json:"futureget"`
 }
 
 // ExecargsSettings configures the execargs analyzer. Pointers distinguish
@@ -98,6 +100,16 @@ type ActivityTimeoutSettings struct {
 	Disabled *bool `json:"disabled"`
 }
 
+// FutureGetSettings configures the futureget analyzer, which flags a
+// workflow.Future/ChildWorkflowFuture/converter.EncodedValue .Get call whose
+// returned error is discarded (a bare statement or `_ =`).
+type FutureGetSettings struct {
+	// Disabled turns the analyzer off entirely (default false). The check is on by
+	// default: discarding a .Get error swallows an activity, child-workflow or
+	// decode failure, which is always a bug, so there is nothing to opt into.
+	Disabled *bool `json:"disabled"`
+}
+
 type plugin struct {
 	settings Settings
 }
@@ -149,6 +161,10 @@ func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 	if p.settings.ActivityTimeout.Disabled != nil {
 		activityTimeoutDisabled = *p.settings.ActivityTimeout.Disabled
 	}
+	futureGetDisabled := false
+	if p.settings.FutureGet.Disabled != nil {
+		futureGetDisabled = *p.settings.FutureGet.Disabled
+	}
 	return []*analysis.Analyzer{
 		execargs.NewAnalyzer(execargs.Settings{
 			Disabled:       disabled,
@@ -166,6 +182,9 @@ func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 		}),
 		activitytimeout.NewAnalyzer(activitytimeout.Settings{
 			Disabled: activityTimeoutDisabled,
+		}),
+		futureget.NewAnalyzer(futureget.Settings{
+			Disabled: futureGetDisabled,
 		}),
 		// Future Temporal analyzers (e.g. registration coverage, retry-policy
 		// sanity, non-determinism heuristics) plug in here.

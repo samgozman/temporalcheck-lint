@@ -73,10 +73,20 @@ Initial proof of concept.
   value isn't evaluated); empty `{}` literals (typically populated field-by-field
   afterwards) and positional literals are intentionally skipped. Turn it off via
   the `activitytimeout.disabled` setting.
+- `futureget` analyzer (on by default): flags a `.Get` call on a
+  `workflow.Future`, `workflow.ChildWorkflowFuture` or `converter.EncodedValue`
+  whose returned **error is discarded** — used as a bare expression statement or
+  assigned to `_`. That error reports a failed activity, a failed child workflow
+  or a decode error; dropping it silently swallows the failure (errcheck scoped to
+  Temporal's result types). By construction it cannot fire on fire-and-forget,
+  which never calls `.Get`. Matching is on the receiver's static type, so a user
+  type that merely embeds `Future` is conservatively skipped. Pure AST + types and
+  near-zero false positives, so it runs by default (errcheck-style); diagnostics
+  are tagged `(future-get)`. Turn it off via the `futureget.disabled` setting.
 - Hermetic, offline `analysistest` fixtures: `testdata/` is a self-contained
   module that resolves `go.temporal.io/sdk` via a local stub, so it resolves in
   IDEs without pulling the real SDK.
 - `conformance/` module: a compile-time contract test that builds against the
   real Temporal SDK in CI, catching any drift between the stub and the SDK's
-  `Execute*`, `testsuite` `OnActivity`/`OnWorkflow`, and `With*Options`
-  signatures.
+  `Execute*`, `testsuite` `OnActivity`/`OnWorkflow`, `With*Options`, and
+  `Future`/`ChildWorkflowFuture`/`EncodedValue` `.Get` signatures.

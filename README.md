@@ -57,6 +57,8 @@ settings:
     disabled: false
   activitytimeout:
     disabled: false
+  futureget:
+    disabled: false
 ```
 
 Each analyzer's keys are documented in its section under [Analyzers](#analyzers).
@@ -444,6 +446,71 @@ The message names the **options type** and ends with the source
   `var ao workflow.ActivityOptions` then field assignments, or a value returned
   from a helper — are out of scope.
 
+### `futureget`
+
+#### The problem
+
+`workflow.Future`, `workflow.ChildWorkflowFuture` and `converter.EncodedValue`
+all surface a result through a `.Get` that returns an `error`:
+
+```go
+func (Future) Get(ctx workflow.Context, valuePtr interface{}) error
+```
+
+That error reports a failed activity, a failed child workflow, or a decode error.
+Dropping it silently swallows the failure — the workflow carries on as if the
+call succeeded:
+
+```go
+future := workflow.ExecuteActivity(ctx, a.Publish, batch)
+_ = future.Get(ctx, nil) // activity error swallowed
+```
+
+#### What it checks
+
+`futureget` flags a `.Get` call on one of those three receiver types whose
+returned error is **discarded** — used as a bare expression statement, or
+assigned to `_`. The fix is to check it:
+
+```go
+if err := future.Get(ctx, &result); err != nil {
+	return err // correct — never flagged
+}
+```
+
+The check is **on by default**. It is errcheck scoped to Temporal's result
+types: pure AST + types with near-zero false positives. By construction it cannot
+fire on fire-and-forget, which never calls `.Get` — exactly the case a generic
+errcheck would wrongly flag.
+
+##### Example diagnostics
+
+```
+workflow.go:21  Get: the returned error from Future.Get is discarded; check it or assign it to a variable you inspect (future-get)
+```
+
+The message names the **receiver type** and ends with the source `(future-get)`
+(golangci-lint then appends the linter name, `(futureget)`, after that).
+
+#### Settings
+
+| Key        | Type | Default | Description                                   |
+|------------|------|---------|-----------------------------------------------|
+| `disabled` | bool | `false` | Turn the `futureget` analyzer off entirely     |
+
+#### Limitations
+
+- **Syntactic discard only.** Only a bare statement and `_ =` are flagged. An
+  error assigned to a real variable that is then never checked (`err := f.Get(…)`
+  with no following use) is **not** flagged — that needs data-flow analysis and
+  would risk false positives.
+- **Static receiver type.** Matching is on the receiver's declared type, so a
+  user type that merely embeds `workflow.Future` and discards a promoted `.Get`
+  is conservatively skipped.
+- **`.Get` only.** Sibling methods (`IsReady`, `GetChildWorkflowExecution`,
+  `SignalChildWorkflow`) don't return a must-check error and are out of scope.
+  `converter.EncodedValues` (plural) is also out of scope.
+
 ## Development
 
 ```bash
@@ -465,11 +532,13 @@ offline.
 
 To make sure that stub doesn't silently drift from the real SDK, the separate
 [`conformance/`](conformance) module imports the **real**
-`go.temporal.io/sdk/workflow` and `go.temporal.io/sdk/testsuite` and asserts — at
-compile time — that each `Execute*` function still has the `(ctx, target,
-args...)` shape, that `TestWorkflowEnvironment.OnActivity`/`.OnWorkflow` still
-have the `(target, matchers...)` shape, and that each `With*Options` function
-still returns a new `Context` — the shapes the analyzers rely on. CI builds it
+`go.temporal.io/sdk/workflow`, `go.temporal.io/sdk/converter` and
+`go.temporal.io/sdk/testsuite` and asserts — at compile time — that each
+`Execute*` function still has the `(ctx, target, args...)` shape, that
+`TestWorkflowEnvironment.OnActivity`/`.OnWorkflow` still have the `(target,
+matchers...)` shape, that each `With*Options` function still returns a new
+`Context`, and that `Future`/`ChildWorkflowFuture`/`EncodedValue` still expose a
+`.Get` returning `error` — the shapes the analyzers rely on. CI builds it
 against the latest SDK and Dependabot bumps the version,
 so a breaking SDK change shows up as a failed `make conformance` on the bump PR.
 It's its own module so the SDK's large dependency tree never touches the main
@@ -507,12 +576,20 @@ temporalcheck-lint/
 │   │   ├── optionsdiscard_internal_test.go
 │   │   ├── nolint_internal_test.go
 │   │   └── testdata/             # self-contained fixture module
-│   └── activitytimeout/          # flag Activity options missing a required timeout
-│       ├── activitytimeout.go    # settings, analyzer, literal dispatch
-│       ├── check.go              # option-type + field matching helpers
+│   ├── activitytimeout/          # flag Activity options missing a required timeout
+│   │   ├── activitytimeout.go    # settings, analyzer, literal dispatch
+│   │   ├── check.go              # option-type + field matching helpers
+│   │   ├── nolint.go             # //nolint directive suppression
+│   │   ├── activitytimeout_test.go  # analysistest
+│   │   ├── activitytimeout_internal_test.go
+│   │   ├── nolint_internal_test.go
+│   │   └── testdata/             # self-contained fixture module
+│   └── futureget/                # flag discarded Future/EncodedValue .Get errors
+│       ├── futureget.go          # settings, analyzer, discard dispatch
+│       ├── check.go              # receiver-type matching helpers
 │       ├── nolint.go             # //nolint directive suppression
-│       ├── activitytimeout_test.go  # analysistest
-│       ├── activitytimeout_internal_test.go
+│       ├── futureget_test.go     # analysistest
+│       ├── futureget_internal_test.go
 │       ├── nolint_internal_test.go
 │       └── testdata/             # self-contained fixture module
 ├── conformance/                  # CI-only module: real-SDK contract test (see below)

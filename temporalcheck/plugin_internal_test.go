@@ -25,6 +25,9 @@ func TestNew(t *testing.T) {
 		"activitytimeout": map[string]any{
 			"disabled": false,
 		},
+		"futureget": map[string]any{
+			"disabled": false,
+		},
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -34,7 +37,7 @@ func TestNew(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildAnalyzers: %v", err)
 	}
-	want := []string{"execargs", "stringtarget", "optionsdiscard", "activitytimeout"}
+	want := []string{"execargs", "stringtarget", "optionsdiscard", "activitytimeout", "futureget"}
 	if len(analyzers) != len(want) {
 		t.Fatalf("BuildAnalyzers returned %d analyzers, want %d", len(analyzers), len(want))
 	}
@@ -74,8 +77,8 @@ func TestNew_Disabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildAnalyzers: %v", err)
 	}
-	if len(analyzers) != 4 {
-		t.Fatalf("BuildAnalyzers returned %d analyzers, want 4", len(analyzers))
+	if len(analyzers) != 5 {
+		t.Fatalf("BuildAnalyzers returned %d analyzers, want 5", len(analyzers))
 	}
 }
 
