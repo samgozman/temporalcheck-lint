@@ -14,6 +14,11 @@ linters:
         description: Static checks for Temporal Go SDK usage.
         original-url: github.com/samgozman/temporalcheck-lint
         settings:
-          # Verify argument types in addition to argument count (default true).
-          # Set to false if Temporal's DataConverter makes the type half noisy.
-          check-types: true
+          # Settings are grouped per analyzer.
+          execargs:
+            # Verify argument types in addition to argument count (default true).
+            # Set to false if Temporal's DataConverter makes the type half noisy.
+            check-types: true
+            # Flag value-vs-pointer mismatches (T vs *T, []T vs []*T), which the
+            # DataConverter otherwise serializes identically (default false).
+            strict-pointers: false

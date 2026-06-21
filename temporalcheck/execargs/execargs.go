@@ -31,6 +31,14 @@ type Settings struct {
 	// is stricter than the wire contract; disable this if the type half is too
 	// noisy for your codebase. The arity check always runs.
 	CheckTypes bool
+
+	// StrictPointers makes the type check distinguish a value from a pointer to
+	// it (T vs *T, and []T vs []*T). Temporal's default DataConverter serializes
+	// both to the same wire form, so by default they are treated as compatible.
+	// Enable this to catch such mismatches anyway -- useful if you rely on that
+	// equivalence and want to be warned before a DataConverter change breaks it.
+	// Has no effect when CheckTypes is false.
+	StrictPointers bool
 }
 
 // kind tells the checker which leading, framework-injected parameter the target
@@ -52,7 +60,7 @@ var entryPoints = map[string]kind{
 
 // NewAnalyzer builds the execargs analyzer for the given settings.
 func NewAnalyzer(settings Settings) *analysis.Analyzer {
-	c := &checker{checkTypes: settings.CheckTypes}
+	c := &checker{checkTypes: settings.CheckTypes, strictPointers: settings.StrictPointers}
 	return &analysis.Analyzer{
 		Name: "execargs",
 		Doc:  "check that arguments to Temporal ExecuteActivity/ExecuteLocalActivity/ExecuteChildWorkflow match the target function signature",
@@ -64,7 +72,8 @@ func NewAnalyzer(settings Settings) *analysis.Analyzer {
 // checker threads the analyzer settings through the AST walk so the analyzer
 // stays free of package-level mutable state.
 type checker struct {
-	checkTypes bool
+	checkTypes     bool
+	strictPointers bool
 }
 
 func (c *checker) run(pass *analysis.Pass) (any, error) {

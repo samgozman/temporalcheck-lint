@@ -26,3 +26,10 @@ func TestExecArgs_CheckTypesDisabled(t *testing.T) {
 	a := execargs.NewAnalyzer(execargs.Settings{CheckTypes: false})
 	analysistest.Run(t, analysistest.TestData(), a, "temporalcheckfixtures/notypes")
 }
+
+// TestExecArgs_StrictPointers: with StrictPointers on, value-vs-pointer and
+// []T-vs-[]*T mismatches (silently accepted by default) are reported.
+func TestExecArgs_StrictPointers(t *testing.T) {
+	a := execargs.NewAnalyzer(execargs.Settings{CheckTypes: true, StrictPointers: true})
+	analysistest.Run(t, analysistest.TestData(), a, "temporalcheckfixtures/strictptr")
+}

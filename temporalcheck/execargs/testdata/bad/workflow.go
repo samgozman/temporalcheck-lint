@@ -43,18 +43,5 @@ func Workflow(ctx workflow.Context) error {
 	// Wrong type rendered with a package qualifier: workflow.Context, not string.
 	_ = workflow.ExecuteActivity(ctx, a.Greet, ctx) // want `ExecuteActivity: arg 1 of "Greet" has type workflow.Context, want string`
 
-	// Struct expected, pointer given.
-	p := Payload{}
-	_ = workflow.ExecuteActivity(ctx, a.SaveValue, &p) // want `ExecuteActivity: arg 1 of "SaveValue" has type \*bad.Payload, want bad.Payload`
-
-	// Pointer expected, struct value given.
-	_ = workflow.ExecuteActivity(ctx, a.SavePointer, p) // want `ExecuteActivity: arg 1 of "SavePointer" has type bad.Payload, want \*bad.Payload`
-
-	// []struct expected, []pointer given.
-	_ = workflow.ExecuteActivity(ctx, a.SaveValues, []*Payload{}) // want `ExecuteActivity: arg 1 of "SaveValues" has type \[\]\*bad.Payload, want \[\]bad.Payload`
-
-	// []pointer expected, []struct given.
-	_ = workflow.ExecuteActivity(ctx, a.SavePointers, []Payload{}) // want `ExecuteActivity: arg 1 of "SavePointers" has type \[\]bad.Payload, want \[\]\*bad.Payload`
-
 	return nil
 }

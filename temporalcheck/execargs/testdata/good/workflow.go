@@ -32,6 +32,14 @@ func Workflow(ctx workflow.Context) error {
 	_ = workflow.ExecuteActivity(ctx, a.SaveValues, []Payload{})
 	_ = workflow.ExecuteActivity(ctx, a.SavePointers, []*Payload{})
 
+	// Pointer/value mismatches are accepted by default: Temporal's DataConverter
+	// serializes T and *T (and []T and []*T) to the same wire form. The strictptr
+	// fixture exercises the same calls with StrictPointers enabled.
+	_ = workflow.ExecuteActivity(ctx, a.SaveValue, &p)
+	_ = workflow.ExecuteActivity(ctx, a.SavePointer, Payload{})
+	_ = workflow.ExecuteActivity(ctx, a.SaveValues, []*Payload{})
+	_ = workflow.ExecuteActivity(ctx, a.SavePointers, []Payload{})
+
 	// String-registered target: cannot be resolved to a signature, so skipped.
 	_ = workflow.ExecuteActivity(ctx, "ProcessOrder", "order-1", 500)
 

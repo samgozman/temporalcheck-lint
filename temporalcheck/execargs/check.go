@@ -88,11 +88,45 @@ func (c *checker) checkAssignable(pass *analysis.Pass, arg ast.Expr, entry, name
 	if got == nil || want == nil {
 		return
 	}
-	if types.AssignableTo(got, want) {
+	if c.compatible(got, want) {
 		return
 	}
 	pass.Reportf(arg.Pos(), "%s: arg %d of %q has type %s, want %s",
 		entry, pos, name, typeStr(got), typeStr(want))
+}
+
+// compatible reports whether an argument of type got may be passed where want is
+// expected. Unless StrictPointers is set, a single layer of pointer indirection
+// is ignored on the value and on slice elements, since Temporal's DataConverter
+// serializes T and *T (and []T and []*T) to the same wire form.
+func (c *checker) compatible(got, want types.Type) bool {
+	if types.AssignableTo(got, want) {
+		return true
+	}
+	if c.strictPointers {
+		return false
+	}
+	return pointerInsensitiveMatch(got, want)
+}
+
+func pointerInsensitiveMatch(got, want types.Type) bool {
+	if types.AssignableTo(deref(got), deref(want)) {
+		return true
+	}
+	gs, gok := got.Underlying().(*types.Slice)
+	ws, wok := want.Underlying().(*types.Slice)
+	if gok && wok {
+		return pointerInsensitiveMatch(gs.Elem(), ws.Elem())
+	}
+	return false
+}
+
+// deref strips one level of pointer indirection, leaving non-pointers untouched.
+func deref(t types.Type) types.Type {
+	if p, ok := t.Underlying().(*types.Pointer); ok {
+		return p.Elem()
+	}
+	return t
 }
 
 // skipCount returns how many leading parameters Temporal injects at run time and

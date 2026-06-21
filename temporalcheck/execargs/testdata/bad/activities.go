@@ -19,13 +19,3 @@ func (a *Activities) Cleanup(jobID string) error {
 func (a *Activities) Notify(ctx context.Context, userID string, tags ...string) error {
 	return nil
 }
-
-type Payload struct{ ID string }
-
-func (a *Activities) SaveValue(ctx context.Context, p Payload) error { return nil }
-
-func (a *Activities) SavePointer(ctx context.Context, p *Payload) error { return nil }
-
-func (a *Activities) SaveValues(ctx context.Context, ps []Payload) error { return nil }
-
-func (a *Activities) SavePointers(ctx context.Context, ps []*Payload) error { return nil }

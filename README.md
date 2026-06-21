@@ -101,9 +101,29 @@ Module plugins are compiled into golangci-lint itself; see the
 
 ## Settings
 
-| Key           | Type | Default | Description                                              |
-|---------------|------|---------|----------------------------------------------------------|
-| `check-types` | bool | `true`  | Also check argument *types*, not just the argument count |
+Settings are grouped per analyzer, so each analyzer keeps its own block as the
+linter grows:
+
+```yaml
+settings:
+  execargs:
+    check-types: true
+    strict-pointers: false
+```
+
+### `execargs`
+
+| Key               | Type | Default | Description                                                                                       |
+|-------------------|------|---------|---------------------------------------------------------------------------------------------------|
+| `check-types`     | bool | `true`  | Also check argument *types*, not just the argument count                                           |
+| `strict-pointers` | bool | `false` | Flag a value passed where a pointer is expected (and vice versa), including `[]T` vs `[]*T`        |
+
+Temporal's default `DataConverter` serializes `T` and `*T` (and `[]T` and
+`[]*T`) to the same wire form, so by default the type check treats them as
+interchangeable. Set `strict-pointers: true` to be warned about such mismatches
+anyway — handy if you rely on that equivalence and want a heads-up before a
+`DataConverter` change could break it. It has no effect while `check-types` is
+off.
 
 ## How it works
 
@@ -125,8 +145,10 @@ information. For each call the analyzer:
 - **Type check is stricter than Temporal.** Temporal serializes arguments
   through its `DataConverter`, so the wire-level contract is looser than Go
   assignability (e.g. `int` vs `int32` may round-trip fine via JSON yet be
-  flagged here). The **arity** check is the false-positive-free part; set
-  `check-types: false` if the type half is noisy for your codebase.
+  flagged here). Value-vs-pointer mismatches are allowed by default (see
+  `strict-pointers`), but other looseness is not modeled. The **arity** check is
+  the false-positive-free part; set `check-types: false` if the type half is
+  noisy for your codebase.
 - **String-registered targets are skipped.** `ExecuteActivity(ctx, "MyActivity", ...)`
   can't be resolved to a signature statically, so it's ignored.
 - **Spread calls are skipped.** `ExecuteActivity(ctx, fn, slice...)` can't be

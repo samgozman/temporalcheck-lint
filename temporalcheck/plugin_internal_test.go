@@ -7,7 +7,9 @@ import (
 )
 
 func TestNew(t *testing.T) {
-	p, err := New(map[string]any{"check-types": false})
+	p, err := New(map[string]any{
+		"execargs": map[string]any{"check-types": false, "strict-pointers": true},
+	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
