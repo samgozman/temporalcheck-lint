@@ -53,6 +53,32 @@ The analyzer **never imports the Temporal SDK** — it matches calls by package 
 fixtures via a local stub (`testdata/temporalsdk/`), and the `conformance/` module
 asserts at compile time that the stub still matches the real SDK's signatures.
 
+### Gotcha: the SDK re-exports option/config *types* as aliases from `internal`
+
+The SDK declares its option/config structs in `go.temporal.io/sdk/internal` and
+re-exports them from `workflow` as **type aliases** — `type ActivityOptions =
+internal.ActivityOptions`, same as `type Context = internal.Context`. This bites
+any analyzer that matches an option **type** (not a function):
+
+- `pass.TypesInfo.TypeOf(lit)` resolves to a type whose `Obj().Pkg().Path()` is
+  `go.temporal.io/sdk/internal`, **not** `…/workflow`; and under `gotypesalias=1`
+  (default in recent Go, which the `golangci-lint custom` binary is built with) the
+  literal's type surfaces as `*types.Alias`, not `*types.Named`. So `t.(*types.Named)`
+  + a `…/workflow` path check both fail. Call `types.Unalias(t)` first and accept
+  **both** the `workflow` and `internal` package paths (see `activitytimeout/check.go`
+  `optionTypeName`).
+- `execargs`/`optionsdiscard`/`stringtarget` only match *functions*
+  (`ExecuteActivity`, `WithActivityOptions`), which live directly in `workflow` and
+  are not aliased — so their stubs declare the option structs right in the stub
+  `workflow` package and `analysistest` passes. A type-matching analyzer that copies
+  that stub gets **false-green tests** but reports nothing against the real SDK. Make
+  its stub mirror the real shape: declare the struct in stub `internal`, alias it from
+  stub `workflow`. `conformance/` can't guard this (Go forbids importing
+  `…/sdk/internal` from outside that module), so the stub is the only guard.
+- golangci-lint caches results and does **not** reliably invalidate on a plugin
+  rebuild. When verifying a plugin change end-to-end, run `./bin/custom-gcl cache
+  clean` after `make build`, or you'll chase stale "0 issues".
+
 ## `execargs` is the template for new analyzers
 
 When adding a Temporal check, mirror this structure: a sibling package next to

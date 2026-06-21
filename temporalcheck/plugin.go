@@ -7,6 +7,7 @@ import (
 	"github.com/golangci/plugin-module-register/register"
 	"golang.org/x/tools/go/analysis"
 
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/activitytimeout"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/execargs"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/optionsdiscard"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/stringtarget"
@@ -20,9 +21,10 @@ func init() {
 // .golangci.yml. Each analyzer gets its own nested block so analyzers added
 // later carry their own settings without colliding in a flat namespace.
 type Settings struct {
-	Execargs       ExecargsSettings       `json:"execargs"`
-	StringTarget   StringTargetSettings   `json:"stringtarget"`
-	OptionsDiscard OptionsDiscardSettings `json:"optionsdiscard"`
+	Execargs        ExecargsSettings        `json:"execargs"`
+	StringTarget    StringTargetSettings    `json:"stringtarget"`
+	OptionsDiscard  OptionsDiscardSettings  `json:"optionsdiscard"`
+	ActivityTimeout ActivityTimeoutSettings `json:"activitytimeout"`
 }
 
 // ExecargsSettings configures the execargs analyzer. Pointers distinguish
@@ -86,6 +88,16 @@ type OptionsDiscardSettings struct {
 	Disabled *bool `json:"disabled"`
 }
 
+// ActivityTimeoutSettings configures the activitytimeout analyzer, which flags
+// workflow.ActivityOptions/LocalActivityOptions composite literals that set no
+// required timeout (StartToCloseTimeout or ScheduleToCloseTimeout).
+type ActivityTimeoutSettings struct {
+	// Disabled turns the analyzer off entirely (default false). The check is on by
+	// default: an activity with neither required timeout is rejected at run time,
+	// so there is nothing to opt into.
+	Disabled *bool `json:"disabled"`
+}
+
 type plugin struct {
 	settings Settings
 }
@@ -133,6 +145,10 @@ func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 	if p.settings.OptionsDiscard.Disabled != nil {
 		optionsDiscardDisabled = *p.settings.OptionsDiscard.Disabled
 	}
+	activityTimeoutDisabled := false
+	if p.settings.ActivityTimeout.Disabled != nil {
+		activityTimeoutDisabled = *p.settings.ActivityTimeout.Disabled
+	}
 	return []*analysis.Analyzer{
 		execargs.NewAnalyzer(execargs.Settings{
 			Disabled:       disabled,
@@ -147,6 +163,9 @@ func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 		}),
 		optionsdiscard.NewAnalyzer(optionsdiscard.Settings{
 			Disabled: optionsDiscardDisabled,
+		}),
+		activitytimeout.NewAnalyzer(activitytimeout.Settings{
+			Disabled: activityTimeoutDisabled,
 		}),
 		// Future Temporal analyzers (e.g. registration coverage, retry-policy
 		// sanity, non-determinism heuristics) plug in here.

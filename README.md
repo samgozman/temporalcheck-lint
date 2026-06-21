@@ -55,6 +55,8 @@ settings:
     strict-tests: true
   optionsdiscard:
     disabled: false
+  activitytimeout:
+    disabled: false
 ```
 
 Each analyzer's keys are documented in its section under [Analyzers](#analyzers).
@@ -375,6 +377,73 @@ The message names the **entry point** and ends with the source `(options-discard
   variable is never used afterwards. Tracking later use is out of scope — it would
   trade the near-zero false-positive rate for marginal extra coverage.
 
+### `activitytimeout`
+
+#### The problem
+
+Every Temporal activity needs a timeout. The SDK requires at least one of
+`StartToCloseTimeout` or `ScheduleToCloseTimeout` on both `ActivityOptions` and
+`LocalActivityOptions`; configure an activity with neither and Temporal rejects it
+at run time. The options are an ordinary struct literal, so the compiler is happy
+to let you omit them:
+
+```go
+ao := workflow.ActivityOptions{TaskQueue: "greetings"} // no timeout set
+ctx = workflow.WithActivityOptions(ctx, ao)
+workflow.ExecuteActivity(ctx, a.Greet)                 // fails at run time
+```
+
+#### What it checks
+
+`activitytimeout` inspects `workflow.ActivityOptions` and
+`workflow.LocalActivityOptions` composite literals and flags any that set fields
+but neither required timeout. The fix is to set one:
+
+```go
+ao := workflow.ActivityOptions{
+	TaskQueue:           "greetings",
+	StartToCloseTimeout: time.Minute, // correct — never flagged
+}
+```
+
+The check is **on by default**. It is pure AST + types with near-zero false
+positives: an activity without a required timeout is always rejected at run time,
+never a deliberate pattern, so there is nothing to opt into — only a `disabled`
+switch to turn it off.
+
+##### Example diagnostics
+
+```
+workflow.go:14  ActivityOptions sets no required timeout: set StartToCloseTimeout or ScheduleToCloseTimeout, or the activity is rejected at run time (required-timeout)
+```
+
+The message names the **options type** and ends with the source
+`(required-timeout)` (golangci-lint then appends the linter name,
+`(activitytimeout)`, after that).
+
+#### Settings
+
+| Key        | Type | Default | Description                                        |
+|------------|------|---------|----------------------------------------------------|
+| `disabled` | bool | `false` | Turn the `activitytimeout` analyzer off entirely    |
+
+#### Limitations
+
+- **Presence, not value.** A required timeout *key* in the literal satisfies the
+  check; its value isn't evaluated. An explicit `StartToCloseTimeout: 0` (also
+  rejected by Temporal) is **not** flagged, since the value is often a variable or
+  expression the analyzer can't resolve statically.
+- **Empty literals are skipped.** `workflow.ActivityOptions{}` is left alone — it
+  is commonly populated field-by-field afterwards (`ao.StartToCloseTimeout = …`),
+  which this literal-only inspection can't see. Flagging it would be a false
+  positive.
+- **Positional literals are skipped.** A literal without field names can't be
+  mapped to fields without the struct layout (and `go vet` already flags unkeyed
+  imported-struct literals).
+- **Only composite literals are inspected.** Options built some other way — e.g.
+  `var ao workflow.ActivityOptions` then field assignments, or a value returned
+  from a helper — are out of scope.
+
 ## Development
 
 ```bash
@@ -431,11 +500,19 @@ temporalcheck-lint/
 │   │   ├── stringtarget_internal_test.go
 │   │   ├── nolint_internal_test.go
 │   │   └── testdata/             # self-contained fixture module
-│   └── optionsdiscard/           # flag discarded With*Options results
-│       ├── optionsdiscard.go     # settings, analyzer, discard dispatch
+│   ├── optionsdiscard/           # flag discarded With*Options results
+│   │   ├── optionsdiscard.go     # settings, analyzer, discard dispatch
+│   │   ├── nolint.go             # //nolint directive suppression
+│   │   ├── optionsdiscard_test.go  # analysistest
+│   │   ├── optionsdiscard_internal_test.go
+│   │   ├── nolint_internal_test.go
+│   │   └── testdata/             # self-contained fixture module
+│   └── activitytimeout/          # flag Activity options missing a required timeout
+│       ├── activitytimeout.go    # settings, analyzer, literal dispatch
+│       ├── check.go              # option-type + field matching helpers
 │       ├── nolint.go             # //nolint directive suppression
-│       ├── optionsdiscard_test.go  # analysistest
-│       ├── optionsdiscard_internal_test.go
+│       ├── activitytimeout_test.go  # analysistest
+│       ├── activitytimeout_internal_test.go
 │       ├── nolint_internal_test.go
 │       └── testdata/             # self-contained fixture module
 ├── conformance/                  # CI-only module: real-SDK contract test (see below)

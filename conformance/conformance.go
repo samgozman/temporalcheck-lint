@@ -38,3 +38,14 @@ var (
 	_ func(workflow.Context, workflow.LocalActivityOptions) workflow.Context = workflow.WithLocalActivityOptions
 	_ func(workflow.Context, workflow.ChildWorkflowOptions) workflow.Context = workflow.WithChildOptions
 )
+
+// activitytimeout reads the two required-timeout fields off each options struct.
+// These references stop compiling if the real SDK renames or drops either field —
+// the cue to update the stub and the check's requiredTimeouts list. The values are
+// discarded; this is a compile-time field-existence assertion only.
+var (
+	_ = workflow.ActivityOptions{}.StartToCloseTimeout
+	_ = workflow.ActivityOptions{}.ScheduleToCloseTimeout
+	_ = workflow.LocalActivityOptions{}.StartToCloseTimeout
+	_ = workflow.LocalActivityOptions{}.ScheduleToCloseTimeout
+)

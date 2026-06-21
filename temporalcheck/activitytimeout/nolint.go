@@ -1,0 +1,87 @@
+package activitytimeout
+
+import (
+	"go/ast"
+	"go/token"
+	"strings"
+)
+
+// nolintForActivitytimeout reports whether a comment is a golangci-lint nolint
+// directive that suppresses this linter: a bare "//nolint", "//nolint:all", or
+// a "//nolint:..." list naming "temporalcheck" (the plugin name golangci-lint
+// knows this analyzer by -- not the analyzer name "activitytimeout"), ignoring any
+// trailing "// explanation".
+func nolintForActivitytimeout(text string) bool {
+	if !strings.HasPrefix(text, "//nolint") {
+		return false
+	}
+
+	rest := strings.TrimPrefix(text, "//nolint")
+	if rest == "" {
+		return true // bare //nolint suppresses every linter
+	}
+
+	if !strings.HasPrefix(rest, ":") {
+		return false // e.g. "//nolintfoo"
+	}
+
+	list := strings.TrimPrefix(rest, ":")
+	if i := strings.Index(list, "//"); i >= 0 {
+		list = list[:i]
+	}
+
+	for _, name := range strings.Split(list, ",") {
+		switch strings.TrimSpace(name) {
+		case "all", "temporalcheck":
+			return true
+		}
+	}
+
+	return false
+}
+
+// nolintInfo records where activitytimeout nolint directives appear in a file.
+type nolintInfo struct {
+	fileSuppressed bool         // a directive before the package clause suppresses the whole file
+	lines          map[int]bool // line numbers carrying a directive, to suppress a node on that line
+}
+
+// collectNolint scans the file's comments for activitytimeout nolint directives.
+func collectNolint(fset *token.FileSet, file *ast.File) nolintInfo {
+	info := nolintInfo{lines: make(map[int]bool)}
+
+	for _, group := range file.Comments {
+		for _, c := range group.List {
+			if !nolintForActivitytimeout(c.Text) {
+				continue
+			}
+
+			info.lines[fset.Position(c.Pos()).Line] = true
+			if c.Pos() < file.Package {
+				info.fileSuppressed = true
+			}
+		}
+	}
+
+	return info
+}
+
+// suppressesNode reports whether a nolint directive covers the node: either the
+// whole file is suppressed, or a directive sits on any line the node spans. The
+// line-range check means a trailing //nolint works wherever the diagnostic
+// anchors (the literal) including literals written across several lines.
+func (info nolintInfo) suppressesNode(fset *token.FileSet, node ast.Node) bool {
+	if info.fileSuppressed {
+		return true
+	}
+
+	start := fset.Position(node.Pos()).Line
+	end := fset.Position(node.End()).Line
+	for line := start; line <= end; line++ {
+		if info.lines[line] {
+			return true
+		}
+	}
+
+	return false
+}

@@ -63,6 +63,16 @@ Initial proof of concept.
   run time. Pure AST + types and near-zero false positives, so it runs by default
   (errcheck-style); diagnostics are tagged `(options-discard)`. Turn it off via
   the `optionsdiscard.disabled` setting.
+- `activitytimeout` analyzer (on by default): inspects `workflow.ActivityOptions`
+  and `workflow.LocalActivityOptions` composite literals and flags any that set
+  fields but neither required timeout — `StartToCloseTimeout` nor
+  `ScheduleToCloseTimeout`. Temporal requires at least one of the two, so an
+  activity configured without either is rejected at run time. Pure AST + types and
+  near-zero false positives, so it runs by default (errcheck-style); diagnostics
+  are tagged `(required-timeout)`. Presence of the key satisfies the check (the
+  value isn't evaluated); empty `{}` literals (typically populated field-by-field
+  afterwards) and positional literals are intentionally skipped. Turn it off via
+  the `activitytimeout.disabled` setting.
 - Hermetic, offline `analysistest` fixtures: `testdata/` is a self-contained
   module that resolves `go.temporal.io/sdk` via a local stub, so it resolves in
   IDEs without pulling the real SDK.
