@@ -13,9 +13,11 @@ func TestNew(t *testing.T) {
 			"strict-types":        true,
 			"strict-pointers":     true,
 			"strict-struct-shape": true,
+			"strict-tests":        true,
 		},
 		"stringtarget": map[string]any{
-			"enabled": true,
+			"enabled":      true,
+			"strict-tests": true,
 		},
 	})
 	if err != nil {

@@ -95,6 +95,41 @@ func TestDriftPhrase(t *testing.T) {
 	}
 }
 
+// TestIsReceiver covers isReceiver, including the false branch for a non-method
+// func (nil receiver), which the analysistest dispatch never reaches because it
+// only calls isReceiver for OnActivity/OnWorkflow -- both real methods.
+func TestIsReceiver(t *testing.T) {
+	pkg := types.NewPackage(workflowInternalPkg, "internal")
+	env := types.NewNamed(types.NewTypeName(token.NoPos, pkg, testEnvType, nil), types.NewStruct(nil, nil), nil)
+
+	mkMethod := func(recv types.Type) *types.Func {
+		var recvVar *types.Var
+		if recv != nil {
+			recvVar = types.NewVar(token.NoPos, nil, "e", recv)
+		}
+		sig := types.NewSignatureType(recvVar, nil, nil, types.NewTuple(), types.NewTuple(), false)
+		return types.NewFunc(token.NoPos, pkg, "OnActivity", sig)
+	}
+
+	tests := []struct {
+		name string
+		recv types.Type // nil means a non-method func
+		want bool
+	}{
+		{"pointer to env", types.NewPointer(env), true},
+		{"value env", env, true},
+		{"not a method", nil, false},
+		{"non-named receiver", types.Typ[types.Int], false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isReceiver(mkMethod(tt.recv), workflowInternalPkg, testEnvType); got != tt.want {
+				t.Errorf("isReceiver(%s) = %v, want %v", tt.name, got, tt.want)
+			}
+		})
+	}
+}
+
 // TestNamedAlias covers the *types.Alias arm of named, which the analysistest
 // fixtures never reach (the test SDK stub resolves workflow.Context to its
 // internal named type).

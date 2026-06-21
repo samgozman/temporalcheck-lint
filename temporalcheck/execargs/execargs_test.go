@@ -50,6 +50,22 @@ func TestExecArgs_StructShapeOff(t *testing.T) {
 	analysistest.Run(t, analysistest.TestData(), a, "temporalcheckfixtures/structshapeoff")
 }
 
+// TestExecArgs_StrictTests: with StrictTests on, the matcher arity of
+// OnActivity/OnWorkflow mock setups is checked -- the count covers every
+// parameter, including the context -- while string, spread, and variadic targets
+// are skipped.
+func TestExecArgs_StrictTests(t *testing.T) {
+	a := execargs.NewAnalyzer(execargs.Settings{StrictTests: true})
+	analysistest.Run(t, analysistest.TestData(), a, "temporalcheckfixtures/tests")
+}
+
+// TestExecArgs_StrictTestsDisabled: with StrictTests off (the default), a mock
+// setup with the wrong matcher arity is silent.
+func TestExecArgs_StrictTestsDisabled(t *testing.T) {
+	a := execargs.NewAnalyzer(execargs.Settings{StrictTypes: true})
+	analysistest.Run(t, analysistest.TestData(), a, "temporalcheckfixtures/testsoff")
+}
+
 // TestExecArgs_Nolint: a //nolint directive naming temporalcheck (or all, or
 // bare) on the call's line suppresses its diagnostic; a directive naming only
 // other linters, or the analyzer name execargs, does not.

@@ -19,6 +19,7 @@ const (
 	tagStrictTypes    = "strict-types"
 	tagStrictPointers = "strict-pointers"
 	tagStructShape    = "strict-struct-shape"
+	tagStrictTests    = "strict-tests"
 )
 
 // checkSignature matches the call-site arguments against the resolved target
@@ -360,6 +361,17 @@ func targetName(expr ast.Expr) string {
 	default:
 		return "target"
 	}
+}
+
+// isReceiver reports whether fn is a method whose receiver is (a pointer to) the
+// named type pkgPath.name -- used to confirm a mock-setup method belongs to
+// testsuite's TestWorkflowEnvironment.
+func isReceiver(fn *types.Func, pkgPath, name string) bool {
+	sig, ok := fn.Type().(*types.Signature)
+	if !ok || sig.Recv() == nil {
+		return false
+	}
+	return named(deref(sig.Recv().Type()), pkgPath, name)
 }
 
 // named reports whether t is the named type pkgPath.name. It accepts both

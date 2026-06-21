@@ -34,6 +34,13 @@ Initial proof of concept.
   - Variadic targets, package-level function activities and aliased imports of
     the workflow package are supported; string-registered targets and spread
     (`args...`) calls are intentionally skipped.
+  - **Test mocks** — opt-in `strict-tests` extends the arity check to Temporal's
+    `testsuite` mock setups, `(*testsuite.TestWorkflowEnvironment).OnActivity` and
+    `.OnWorkflow`. Unlike `Execute*`, the matchers must cover **every** declared
+    parameter — including the injected context — so the expected count differs by
+    one; only arity is checked, since the matchers (`mock.Anything`,
+    `mock.MatchedBy`) are opaque. Diagnostics are tagged `(strict-tests)`;
+    string-named, spread, and variadic targets are skipped.
 - `stringtarget` analyzer (opt-in, off by default): flags
   `workflow.ExecuteActivity`, `workflow.ExecuteLocalActivity` and
   `workflow.ExecuteChildWorkflow` calls whose target is named by **string** (a
@@ -42,9 +49,13 @@ Initial proof of concept.
   `execargs`; this check surfaces those call sites so they can be refactored to a
   function reference that `execargs` *can* verify. Diagnostics are tagged
   `(string-target)`; enable via the `stringtarget.enabled` setting.
+  - **Test mocks** — opt-in `strict-tests` (independent of `enabled`) extends the
+    check to `(*testsuite.TestWorkflowEnvironment).OnActivity` and `.OnWorkflow`
+    setups whose target is named by string. Diagnostics are tagged
+    `(strict-tests)`.
 - Hermetic, offline `analysistest` fixtures: `testdata/` is a self-contained
   module that resolves `go.temporal.io/sdk` via a local stub, so it resolves in
   IDEs without pulling the real SDK.
 - `conformance/` module: a compile-time contract test that builds against the
   real Temporal SDK in CI, catching any drift between the stub and the SDK's
-  `Execute*` signatures.
+  `Execute*` and `testsuite` `OnActivity`/`OnWorkflow` signatures.

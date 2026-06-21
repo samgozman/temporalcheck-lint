@@ -35,6 +35,22 @@ func TestStringTarget_Disabled(t *testing.T) {
 	analysistest.Run(t, analysistest.TestData(), a, "stringtargetfixtures/disabled")
 }
 
+// TestStringTarget_StrictTests: with StrictTests on (and Enabled off, proving
+// independence), a string-named OnActivity/OnWorkflow mock setup is reported,
+// while a function-reference target is left alone.
+func TestStringTarget_StrictTests(t *testing.T) {
+	a := stringtarget.NewAnalyzer(stringtarget.Settings{StrictTests: true})
+	analysistest.Run(t, analysistest.TestData(), a, "stringtargetfixtures/tests")
+}
+
+// TestStringTarget_StrictTestsDisabled: with StrictTests off, a string-named
+// mock setup is silent even when Enabled is on -- the production check does not
+// bleed into test mocks.
+func TestStringTarget_StrictTestsDisabled(t *testing.T) {
+	a := stringtarget.NewAnalyzer(stringtarget.Settings{Enabled: true})
+	analysistest.Run(t, analysistest.TestData(), a, "stringtargetfixtures/testsoff")
+}
+
 // TestStringTarget_Nolint: a //nolint directive naming temporalcheck (or all, or
 // bare) on the call's line suppresses its diagnostic; a directive naming only
 // other linters, or the analyzer name stringtarget, does not.

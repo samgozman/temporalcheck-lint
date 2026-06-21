@@ -49,8 +49,10 @@ settings:
     strict-types: true
     strict-pointers: true
     strict-struct-shape: true
+    strict-tests: true
   stringtarget:
     enabled: true
+    strict-tests: true
 ```
 
 Each analyzer's keys are documented in its section under [Analyzers](#analyzers).
@@ -124,6 +126,10 @@ against it:
   round-trip while silently dropping or zero-filling mismatched fields — it works
   until a field is renamed or starts to matter. Opt-in via `strict-struct-shape`
   (off by default).
+- **Test mocks** — the matcher arity of `testsuite` mock setups,
+  `(*testsuite.TestWorkflowEnvironment).OnActivity` and `.OnWorkflow`. Opt-in via
+  `strict-tests` (off by default); see [Settings](#settings) below for the
+  context-counting difference and why only arity is checked.
 
 The injected leading parameter is handled per entry point:
 
@@ -149,8 +155,8 @@ workflow.go:38  ExecuteChildWorkflow: child workflow "ShipmentWorkflow" expects 
 ```
 
 The message names the **entry point** and ends with the **source** in
-parentheses — `(arity)`, `(strict-types)`, `(strict-pointers)`, or
-`(strict-struct-shape)` — so you can see which check fired and which setting controls it
+parentheses — `(arity)`, `(strict-types)`, `(strict-pointers)`,
+`(strict-struct-shape)`, or `(strict-tests)` — so you can see which check fired and which setting controls it
 (golangci-lint then appends the linter name, e.g. `(execargs)`, after that).
 `arg N` numbers the arguments **you write at the call site** (after the target),
 not the target's parameter positions.
@@ -166,6 +172,7 @@ The three checks below are independent, opt-in layers — enable any combination
 | `strict-types`        | bool | `false` | Also check argument *types*, not just the argument count                                           |
 | `strict-pointers`     | bool | `false` | Flag a value passed where a pointer is expected (and vice versa), including `[]T` vs `[]*T`        |
 | `strict-struct-shape` | bool | `false` | Flag passing one struct type where a *different* struct type is wanted                             |
+| `strict-tests`        | bool | `false` | Also check the matcher arity of `testsuite` `OnActivity`/`OnWorkflow` mock setups                  |
 
 Temporal's default `DataConverter` serializes `T` and `*T` (and `[]T` and
 `[]*T`) to the same wire form, so the type check treats them as interchangeable.
@@ -180,9 +187,24 @@ works until a field is renamed or starts to matter. `strict-struct-shape`
 surfaces these, naming exactly what drifts; a shared field with an incompatible
 type, or no shared fields at all, is reported as a `strict-types` error instead.
 
-The three settings are orthogonal: each can be enabled on its own (e.g.
-`strict-struct-shape` without `strict-types`), and every diagnostic is tagged
-with the setting that produced it.
+`strict-tests` extends the **arity** check to Temporal's `testsuite` mock setups
+— `(*testsuite.TestWorkflowEnvironment).OnActivity` and `.OnWorkflow`. These take
+the target as `interface{}` and the matchers as `...interface{}`, the same type
+erasure `Execute*` suffers. One difference matters: the matchers must cover
+**every** declared parameter, **including** the injected `context.Context` /
+`workflow.Context` (you pass `mock.Anything` for it) — so the expected count is
+the target's full parameter count, with nothing skipped. Only arity is checked,
+because the matchers (`mock.Anything`, `mock.MatchedBy`) are opaque and never the
+real typed value. String-named, spread (`matchers...`), and variadic targets are
+skipped. Diagnostics are tagged `(strict-tests)`, e.g.:
+
+```
+workflow_test.go:42  OnActivity: mock for activity "Greet" expects 2 arguments (one per parameter), got 1 (strict-tests)
+```
+
+The settings are orthogonal: each can be enabled on its own (e.g.
+`strict-struct-shape` without `strict-types`, or `strict-tests` on its own), and
+every diagnostic is tagged with the setting that produced it.
 
 #### How it works
 
@@ -258,6 +280,13 @@ This check is **off by default**: naming a target by string is a legitimate,
 sometimes necessary pattern (for example an activity implemented in another
 service or language), so flagging it is opt-in.
 
+With `strict-tests` on, the same string-target check runs over Temporal's
+`testsuite` mock setups — `(*testsuite.TestWorkflowEnvironment).OnActivity` and
+`.OnWorkflow` — whose target is named by string. It is **independent** of
+`enabled`, so you can flag string-named mocks in tests without flagging
+production `Execute*` calls (or the reverse). Those diagnostics are tagged
+`(strict-tests)` rather than `(string-target)`.
+
 ##### Example diagnostics
 
 ```
@@ -272,9 +301,10 @@ variable it falls back to a generic subject.
 
 #### Settings
 
-| Key       | Type | Default | Description                                                                          |
-|-----------|------|---------|--------------------------------------------------------------------------------------|
-| `enabled` | bool | `false` | Turn the `stringtarget` analyzer on — it reports nothing unless explicitly enabled    |
+| Key            | Type | Default | Description                                                                                       |
+|----------------|------|---------|---------------------------------------------------------------------------------------------------|
+| `enabled`      | bool | `false` | Flag string-named targets in production `Execute*` calls                                          |
+| `strict-tests` | bool | `false` | Flag string-named targets in `testsuite` `OnActivity`/`OnWorkflow` mock setups (independent of `enabled`) |
 
 #### Limitations
 
@@ -304,9 +334,11 @@ offline.
 
 To make sure that stub doesn't silently drift from the real SDK, the separate
 [`conformance/`](conformance) module imports the **real**
-`go.temporal.io/sdk/workflow` and asserts — at compile time — that each
-`Execute*` function still has the `(ctx, target, args...)` shape the analyzer
-relies on. CI builds it against the latest SDK and Dependabot bumps the version,
+`go.temporal.io/sdk/workflow` and `go.temporal.io/sdk/testsuite` and asserts — at
+compile time — that each `Execute*` function still has the `(ctx, target,
+args...)` shape and that `TestWorkflowEnvironment.OnActivity`/`.OnWorkflow` still
+have the `(target, matchers...)` shape the analyzers rely on. CI builds it
+against the latest SDK and Dependabot bumps the version,
 so a breaking SDK change shows up as a failed `make conformance` on the bump PR.
 It's its own module so the SDK's large dependency tree never touches the main
 module or the fixtures.
