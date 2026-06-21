@@ -28,3 +28,13 @@ var (
 	_ func(interface{}, ...interface{}) *testsuite.MockCallWrapper = testEnv.OnActivity
 	_ func(interface{}, ...interface{}) *testsuite.MockCallWrapper = testEnv.OnWorkflow
 )
+
+// optionsdiscard reads each With*Options call as (ctx, options) returning a new
+// Context. These assignments stop compiling if the real SDK changes that shape
+// — e.g. if a call started mutating ctx in place — which is the cue to revisit
+// the check; keep the option types in sync with the stub at testdata/temporalsdk.
+var (
+	_ func(workflow.Context, workflow.ActivityOptions) workflow.Context      = workflow.WithActivityOptions
+	_ func(workflow.Context, workflow.LocalActivityOptions) workflow.Context = workflow.WithLocalActivityOptions
+	_ func(workflow.Context, workflow.ChildWorkflowOptions) workflow.Context = workflow.WithChildOptions
+)

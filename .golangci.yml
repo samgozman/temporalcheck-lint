@@ -43,3 +43,8 @@ linters:
             # Flag testsuite mock setups (OnActivity/OnWorkflow) whose target is
             # named by string (default false). Independent of enabled.
             strict-tests: true
+          optionsdiscard:
+            # Flag workflow.WithActivityOptions/WithLocalActivityOptions/
+            # WithChildOptions calls whose returned context is discarded, so the
+            # options silently never apply. On by default; set true to turn it off.
+            disabled: false

@@ -53,6 +53,8 @@ settings:
   stringtarget:
     enabled: true
     strict-tests: true
+  optionsdiscard:
+    disabled: false
 ```
 
 Each analyzer's keys are documented in its section under [Analyzers](#analyzers).
@@ -313,6 +315,66 @@ variable it falls back to a generic subject.
   `execargs` limitation above for why that's not statically possible across
   packages). Its purpose is to steer you toward the form `execargs` can check.
 
+### `optionsdiscard`
+
+#### The problem
+
+`workflow.WithActivityOptions`, `workflow.WithLocalActivityOptions` and
+`workflow.WithChildOptions` do **not** mutate the context you give them — each
+returns a *new* context that carries the options:
+
+```go
+func WithActivityOptions(ctx Context, options ActivityOptions) Context
+```
+
+The classic mistake is to forget the `ctx =`:
+
+```go
+workflow.WithActivityOptions(ctx, ao)  // result thrown away
+workflow.ExecuteActivity(ctx, a.Greet) // runs with the OLD ctx — no options set
+```
+
+This compiles cleanly, but the options silently never apply and the activity
+blows up at run time with a missing-`StartToCloseTimeout` error.
+
+#### What it checks
+
+`optionsdiscard` flags any `WithActivityOptions` / `WithLocalActivityOptions` /
+`WithChildOptions` call whose returned context is **discarded** — used as a bare
+expression statement, or assigned to the blank identifier `_`. The fix is to
+assign the result back:
+
+```go
+ctx = workflow.WithActivityOptions(ctx, ao) // correct — never flagged
+```
+
+The check is **on by default**. It is pure AST + types with near-zero false
+positives (errcheck-style): discarding a `With*Options` result is always a bug,
+never a deliberate pattern, so there is nothing to opt into — only a `disabled`
+switch to turn it off.
+
+##### Example diagnostics
+
+```
+workflow.go:14  WithActivityOptions: the returned context is discarded, so the options never apply; assign it back with ctx = workflow.WithActivityOptions(ctx, opts) (options-discard)
+```
+
+The message names the **entry point** and ends with the source `(options-discard)`
+(golangci-lint then appends the linter name, `(optionsdiscard)`, after that).
+
+#### Settings
+
+| Key        | Type | Default | Description                                       |
+|------------|------|---------|---------------------------------------------------|
+| `disabled` | bool | `false` | Turn the `optionsdiscard` analyzer off entirely    |
+
+#### Limitations
+
+- **Only the discard forms are flagged.** A bare call statement and `_ =` are
+  caught; a result assigned to a *named* variable is assumed kept, even if that
+  variable is never used afterwards. Tracking later use is out of scope — it would
+  trade the near-zero false-positive rate for marginal extra coverage.
+
 ## Development
 
 ```bash
@@ -336,8 +398,9 @@ To make sure that stub doesn't silently drift from the real SDK, the separate
 [`conformance/`](conformance) module imports the **real**
 `go.temporal.io/sdk/workflow` and `go.temporal.io/sdk/testsuite` and asserts — at
 compile time — that each `Execute*` function still has the `(ctx, target,
-args...)` shape and that `TestWorkflowEnvironment.OnActivity`/`.OnWorkflow` still
-have the `(target, matchers...)` shape the analyzers rely on. CI builds it
+args...)` shape, that `TestWorkflowEnvironment.OnActivity`/`.OnWorkflow` still
+have the `(target, matchers...)` shape, and that each `With*Options` function
+still returns a new `Context` — the shapes the analyzers rely on. CI builds it
 against the latest SDK and Dependabot bumps the version,
 so a breaking SDK change shows up as a failed `make conformance` on the bump PR.
 It's its own module so the SDK's large dependency tree never touches the main
@@ -361,11 +424,18 @@ temporalcheck-lint/
 │   │       ├── go.mod                 # replace go.temporal.io/sdk => ./temporalsdk
 │   │       ├── good/ bad/ notypes/    # fixture packages (// want assertions)
 │   │       └── temporalsdk/           # local stub module for the Temporal SDK
-│   └── stringtarget/             # opt-in: flag string-named Execute* targets
-│       ├── stringtarget.go       # settings, analyzer, call dispatch
+│   ├── stringtarget/             # opt-in: flag string-named Execute* targets
+│   │   ├── stringtarget.go       # settings, analyzer, call dispatch
+│   │   ├── nolint.go             # //nolint directive suppression
+│   │   ├── stringtarget_test.go  # analysistest
+│   │   ├── stringtarget_internal_test.go
+│   │   ├── nolint_internal_test.go
+│   │   └── testdata/             # self-contained fixture module
+│   └── optionsdiscard/           # flag discarded With*Options results
+│       ├── optionsdiscard.go     # settings, analyzer, discard dispatch
 │       ├── nolint.go             # //nolint directive suppression
-│       ├── stringtarget_test.go  # analysistest
-│       ├── stringtarget_internal_test.go
+│       ├── optionsdiscard_test.go  # analysistest
+│       ├── optionsdiscard_internal_test.go
 │       ├── nolint_internal_test.go
 │       └── testdata/             # self-contained fixture module
 ├── conformance/                  # CI-only module: real-SDK contract test (see below)

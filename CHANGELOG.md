@@ -53,9 +53,19 @@ Initial proof of concept.
     check to `(*testsuite.TestWorkflowEnvironment).OnActivity` and `.OnWorkflow`
     setups whose target is named by string. Diagnostics are tagged
     `(strict-tests)`.
+- `optionsdiscard` analyzer (on by default): flags
+  `workflow.WithActivityOptions`, `workflow.WithLocalActivityOptions` and
+  `workflow.WithChildOptions` calls whose returned context is **discarded** — used
+  as a bare expression statement or assigned to `_`. Those functions return a new
+  context carrying the options rather than mutating the one passed in, so a
+  forgotten `ctx =` means the options silently never apply and the call fails at
+  run time. Pure AST + types and near-zero false positives, so it runs by default
+  (errcheck-style); diagnostics are tagged `(options-discard)`. Turn it off via
+  the `optionsdiscard.disabled` setting.
 - Hermetic, offline `analysistest` fixtures: `testdata/` is a self-contained
   module that resolves `go.temporal.io/sdk` via a local stub, so it resolves in
   IDEs without pulling the real SDK.
 - `conformance/` module: a compile-time contract test that builds against the
   real Temporal SDK in CI, catching any drift between the stub and the SDK's
-  `Execute*` and `testsuite` `OnActivity`/`OnWorkflow` signatures.
+  `Execute*`, `testsuite` `OnActivity`/`OnWorkflow`, and `With*Options`
+  signatures.

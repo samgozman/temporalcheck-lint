@@ -8,6 +8,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/execargs"
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/optionsdiscard"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/stringtarget"
 )
 
@@ -19,8 +20,9 @@ func init() {
 // .golangci.yml. Each analyzer gets its own nested block so analyzers added
 // later carry their own settings without colliding in a flat namespace.
 type Settings struct {
-	Execargs     ExecargsSettings     `json:"execargs"`
-	StringTarget StringTargetSettings `json:"stringtarget"`
+	Execargs       ExecargsSettings       `json:"execargs"`
+	StringTarget   StringTargetSettings   `json:"stringtarget"`
+	OptionsDiscard OptionsDiscardSettings `json:"optionsdiscard"`
 }
 
 // ExecargsSettings configures the execargs analyzer. Pointers distinguish
@@ -73,6 +75,16 @@ type StringTargetSettings struct {
 	StrictTests *bool `json:"strict-tests"`
 }
 
+// OptionsDiscardSettings configures the optionsdiscard analyzer, which flags
+// workflow.With{Activity,LocalActivity,ChildWorkflow}Options calls whose returned
+// context is discarded -- the options then silently never apply.
+type OptionsDiscardSettings struct {
+	// Disabled turns the analyzer off entirely (default false). The check is on by
+	// default: discarding a With*Options result is always a bug, so there is
+	// nothing to opt into.
+	Disabled *bool `json:"disabled"`
+}
+
 type plugin struct {
 	settings Settings
 }
@@ -116,6 +128,10 @@ func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 	if p.settings.StringTarget.StrictTests != nil {
 		stringTargetStrictTests = *p.settings.StringTarget.StrictTests
 	}
+	optionsDiscardDisabled := false
+	if p.settings.OptionsDiscard.Disabled != nil {
+		optionsDiscardDisabled = *p.settings.OptionsDiscard.Disabled
+	}
 	return []*analysis.Analyzer{
 		execargs.NewAnalyzer(execargs.Settings{
 			Disabled:       disabled,
@@ -127,6 +143,9 @@ func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 		stringtarget.NewAnalyzer(stringtarget.Settings{
 			Enabled:     stringTargetEnabled,
 			StrictTests: stringTargetStrictTests,
+		}),
+		optionsdiscard.NewAnalyzer(optionsdiscard.Settings{
+			Disabled: optionsDiscardDisabled,
 		}),
 		// Future Temporal analyzers (e.g. registration coverage, retry-policy
 		// sanity, non-determinism heuristics) plug in here.
