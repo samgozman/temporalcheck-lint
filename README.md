@@ -42,6 +42,11 @@ call site against it:
   on; this is the false-positive-free baseline.
 - **Types** — each argument is assignable to the corresponding parameter. Opt-in
   via `strict-types` (off by default).
+- **Struct shape** — passing one struct type where a *different* struct type is
+  wanted. The `DataConverter` serializes by field name, so distinct structs can
+  round-trip while silently dropping or zero-filling mismatched fields — it works
+  until a field is renamed or starts to matter. Opt-in via `strict-struct-shape`
+  (off by default).
 
 The injected leading parameter is handled per entry point:
 
@@ -62,15 +67,16 @@ workflow.go:17  ExecuteActivity: activity "Greet" expects 1 argument, got 2 (ari
 workflow.go:20  ExecuteActivity: arg 1 of "Greet" has type int, want string (strict-types)
 workflow.go:23  ExecuteActivity: arg 2 of "ProcessOrder" has type string, want int (strict-types)
 workflow.go:30  ExecuteActivity: arg 1 of "Save" has type []*Tier, want []Tier (strict-pointers)
+workflow.go:34  ExecuteActivity: arg 1 of "Charge" sends *PayParams, target wants *ChargeParams — serializes by field name but drops {Note} and leaves {Currency} unset (strict-struct-shape)
 workflow.go:38  ExecuteChildWorkflow: child workflow "ShipmentWorkflow" expects 1 argument, got 0 (arity)
 ```
 
 The message names the **entry point** and ends with the **source** in
-parentheses — `(arity)`, `(strict-types)`, or `(strict-pointers)` — so you can
-see which check fired and which setting controls it (golangci-lint then appends
-the linter name, e.g. `(execargs)`, after that). `arg N` numbers the arguments
-**you write at the call site** (after the target), not the target's parameter
-positions.
+parentheses — `(arity)`, `(strict-types)`, `(strict-pointers)`, or
+`(strict-struct-shape)` — so you can see which check fired and which setting controls it
+(golangci-lint then appends the linter name, e.g. `(execargs)`, after that).
+`arg N` numbers the arguments **you write at the call site** (after the target),
+not the target's parameter positions.
 
 ## Use it as a golangci-lint plugin
 
@@ -114,24 +120,36 @@ settings:
   execargs:
     strict-types: true
     strict-pointers: false
+    strict-struct-shape: false
 ```
 
 ### `execargs`
 
-By default the analyzer only checks **arity** (the false-positive-free part);
-the stricter checks are opt-in.
+By default the analyzer only checks **arity** (the false-positive-free part).
+The three checks below are independent, opt-in layers — enable any combination.
 
-| Key               | Type | Default | Description                                                                                       |
-|-------------------|------|---------|---------------------------------------------------------------------------------------------------|
-| `strict-types`    | bool | `false` | Also check argument *types*, not just the argument count                                           |
-| `strict-pointers` | bool | `false` | Flag a value passed where a pointer is expected (and vice versa), including `[]T` vs `[]*T`        |
+| Key                   | Type | Default | Description                                                                                       |
+|-----------------------|------|---------|---------------------------------------------------------------------------------------------------|
+| `strict-types`        | bool | `false` | Also check argument *types*, not just the argument count                                           |
+| `strict-pointers`     | bool | `false` | Flag a value passed where a pointer is expected (and vice versa), including `[]T` vs `[]*T`        |
+| `strict-struct-shape` | bool | `false` | Flag passing one struct type where a *different* struct type is wanted                             |
 
 Temporal's default `DataConverter` serializes `T` and `*T` (and `[]T` and
-`[]*T`) to the same wire form, so even with `strict-types` on the type check
-treats them as interchangeable. Set `strict-pointers: true` to be warned about
-such mismatches anyway — handy if you rely on that equivalence and want a
-heads-up before a `DataConverter` change could break it. It has no effect while
-`strict-types` is off.
+`[]*T`) to the same wire form, so the type check treats them as interchangeable.
+Set `strict-pointers: true` to be warned about such mismatches anyway — handy if
+you rely on that equivalence and want a heads-up before a `DataConverter` change
+could break it.
+
+The converter also serializes structs **by field name**, so passing a distinct
+struct type can quietly round-trip — overlapping fields map across, while fields
+only on the sender are dropped and fields only on the target are left zero. That
+works until a field is renamed or starts to matter. `strict-struct-shape`
+surfaces these, naming exactly what drifts; a shared field with an incompatible
+type, or no shared fields at all, is reported as a `strict-types` error instead.
+
+The three settings are orthogonal: each can be enabled on its own (e.g.
+`strict-struct-shape` without `strict-types`), and every diagnostic is tagged
+with the setting that produced it.
 
 ## How it works
 
@@ -165,6 +183,11 @@ information. For each call the analyzer:
   `Activities.Greet` (receiver as first param) and a dot-imported
   `ExecuteActivity` aren't recognized. Neither is idiomatic Temporal usage.
 - Variadic activities get a basic check (fixed prefix + element type).
+- **`strict-struct-shape` models JSON, and only one level.** It matches exported
+  fields by their `json` tag name (the default `DataConverter`); a custom
+  converter with different semantics isn't modeled. Embedded-field promotion is
+  not followed, and slices/maps of distinct structs fall back to `strict-types`
+  rather than a per-field drift report.
 
 ## Development
 

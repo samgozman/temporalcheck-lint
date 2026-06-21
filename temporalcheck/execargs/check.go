@@ -1,8 +1,12 @@
 package execargs
 
 import (
+	"fmt"
 	"go/ast"
 	"go/types"
+	"reflect"
+	"sort"
+	"strings"
 
 	"golang.org/x/tools/go/analysis"
 )
@@ -14,6 +18,7 @@ const (
 	tagArity          = "arity"
 	tagStrictTypes    = "strict-types"
 	tagStrictPointers = "strict-pointers"
+	tagStructShape    = "strict-struct-shape"
 )
 
 // checkSignature matches the call-site arguments against the resolved target
@@ -44,7 +49,7 @@ func (c *checker) checkSignature(
 			entry, noun(k), name, want, argWord(want), len(args), tagArity)
 		return
 	}
-	if !c.strictTypes {
+	if !c.typeChecksEnabled() {
 		return
 	}
 	for i, arg := range args {
@@ -76,7 +81,7 @@ func (c *checker) checkVariadic(
 			entry, noun(k), name, fixed, argWord(fixed), len(args), tagArity)
 		return
 	}
-	if !c.strictTypes {
+	if !c.typeChecksEnabled() {
 		return
 	}
 	for i := 0; i < fixed; i++ {
@@ -100,19 +105,187 @@ func (c *checker) checkAssignable(pass *analysis.Pass, arg ast.Expr, entry, name
 	if types.AssignableTo(got, want) {
 		return
 	}
-	// Attribute the mismatch to the setting that surfaced it, so the message
-	// tells you which knob to turn. A difference that is only pointer indirection
-	// (T vs *T, []T vs []*T) is allowed unless StrictPointers is set; anything
-	// else is a genuine type mismatch under StrictTypes.
-	setting := tagStrictTypes
+
+	// A difference that is only pointer indirection (T vs *T, []T vs []*T) is
+	// allowed unless StrictPointers is set.
 	if pointerInsensitiveMatch(got, want) {
-		if !c.strictPointers {
-			return
+		if c.strictPointers {
+			c.reportf(pass, arg, "%s: arg %d of %q has type %s, want %s (%s)",
+				entry, pos, name, typeStr(got), typeStr(want), tagStrictPointers)
 		}
-		setting = tagStrictPointers
+		return
 	}
-	pass.Reportf(arg.Pos(), "%s: arg %d of %q has type %s, want %s (%s)",
-		entry, pos, name, typeStr(got), typeStr(want), setting)
+
+	// Two distinct struct types (passed by value or pointer): Temporal serializes
+	// by field name, so they may round-trip. Classify by how their fields line up.
+	if gs, ws := structUnder(got), structUnder(want); gs != nil && ws != nil {
+		c.reportStructMismatch(pass, arg, entry, name, pos, got, want, compareStructs(gs, ws))
+		return
+	}
+
+	// A plain type mismatch (int vs string, struct vs map, ...).
+	if c.strictTypes {
+		c.reportf(pass, arg, "%s: arg %d of %q has type %s, want %s (%s)",
+			entry, pos, name, typeStr(got), typeStr(want), tagStrictTypes)
+	}
+}
+
+// reportStructMismatch emits the right diagnostic for passing struct type got
+// where struct type want is expected, given how their fields line up.
+func (c *checker) reportStructMismatch(pass *analysis.Pass, arg ast.Expr, entry, name string, pos int, got, want types.Type, d structDiff) {
+	switch {
+	case d.conflict != nil:
+		// A shared field has an incompatible type: genuine wire corruption.
+		if c.strictTypes || c.structShape {
+			c.reportf(pass, arg, "%s: arg %d of %q sends %s, target wants %s — field %q is incompatible (%s vs %s) (%s)",
+				entry, pos, name, typeStr(got), typeStr(want), d.conflict.field,
+				typeStr(d.conflict.got), typeStr(d.conflict.want), tagStrictTypes)
+		}
+	case d.overlap == 0:
+		// Nothing serializes across: almost certainly the wrong type entirely.
+		if c.strictTypes || c.structShape {
+			c.reportf(pass, arg, "%s: arg %d of %q sends %s, target wants %s — no fields in common (%s)",
+				entry, pos, name, typeStr(got), typeStr(want), tagStrictTypes)
+		}
+	default:
+		// Wire-compatible but distinct: the dangerous-but-works case.
+		if c.structShape {
+			c.reportf(pass, arg, "%s: arg %d of %q sends %s, target wants %s — %s (%s)",
+				entry, pos, name, typeStr(got), typeStr(want), driftPhrase(d), tagStructShape)
+		}
+	}
+}
+
+// reportf is a thin wrapper over pass.Reportf anchored at the argument.
+func (c *checker) reportf(pass *analysis.Pass, arg ast.Expr, format string, args ...any) {
+	pass.Reportf(arg.Pos(), format, args...)
+}
+
+// structUnder returns the struct that t denotes, after stripping a single
+// pointer indirection, or nil if t is not (a pointer to) a struct.
+func structUnder(t types.Type) *types.Struct {
+	if p, ok := types.Unalias(t).Underlying().(*types.Pointer); ok {
+		t = p.Elem()
+	}
+	if s, ok := types.Unalias(t).Underlying().(*types.Struct); ok {
+		return s
+	}
+	return nil
+}
+
+// structDiff describes how a sent struct's fields line up with a wanted struct's,
+// matched by their on-the-wire (JSON) names.
+type structDiff struct {
+	overlap  int            // shared fields whose types are compatible
+	drops    []string       // sent fields the target ignores (Go names)
+	unset    []string       // target fields left zero because the sender omits them
+	conflict *fieldConflict // first shared field whose types are incompatible
+}
+
+type fieldConflict struct {
+	field     string // Go field name on the target
+	got, want types.Type
+}
+
+// compareStructs matches the two structs' serialized fields by JSON name.
+func compareStructs(got, want *types.Struct) structDiff {
+	gf, wf := structFields(got), structFields(want)
+	var d structDiff
+	for _, jsonName := range sortedKeys(gf) {
+		gi := gf[jsonName]
+		wi, shared := wf[jsonName]
+		if !shared {
+			d.drops = append(d.drops, gi.goName)
+			continue
+		}
+		if !fieldsCompatible(gi.typ, wi.typ) {
+			if d.conflict == nil {
+				d.conflict = &fieldConflict{field: wi.goName, got: gi.typ, want: wi.typ}
+			}
+			continue
+		}
+		d.overlap++
+	}
+	for _, jsonName := range sortedKeys(wf) {
+		if _, shared := gf[jsonName]; !shared {
+			d.unset = append(d.unset, wf[jsonName].goName)
+		}
+	}
+	return d
+}
+
+// fieldsCompatible uses the same lenient notion as the top-level check, so a
+// field that differs only by pointer indirection is not treated as a conflict.
+func fieldsCompatible(a, b types.Type) bool {
+	return types.AssignableTo(a, b) || pointerInsensitiveMatch(a, b)
+}
+
+type fieldEntry struct {
+	goName string
+	typ    types.Type
+}
+
+// structFields maps each serialized field's JSON name to its info, over exported
+// fields and honoring json tags (`json:"-"` is skipped). Embedded fields are not
+// modeled (v1 limitation), so they are skipped too.
+func structFields(s *types.Struct) map[string]fieldEntry {
+	out := make(map[string]fieldEntry, s.NumFields())
+	for i := 0; i < s.NumFields(); i++ {
+		f := s.Field(i)
+		if !f.Exported() || f.Embedded() {
+			continue
+		}
+		name, ok := jsonName(f.Name(), s.Tag(i))
+		if !ok {
+			continue
+		}
+		out[name] = fieldEntry{goName: f.Name(), typ: f.Type()}
+	}
+	return out
+}
+
+// jsonName returns a field's on-the-wire name and whether it is serialized at
+// all, mirroring encoding/json's reading of the `json` struct tag.
+func jsonName(goName, tag string) (string, bool) {
+	v, ok := reflect.StructTag(tag).Lookup("json")
+	if !ok {
+		return goName, true
+	}
+	if v == "-" {
+		return "", false
+	}
+	if i := strings.IndexByte(v, ','); i >= 0 {
+		v = v[:i]
+	}
+	if v == "" {
+		return goName, true
+	}
+	return v, true
+}
+
+func sortedKeys(m map[string]fieldEntry) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// driftPhrase describes what silently changes when a wire-compatible but distinct
+// struct is passed.
+func driftPhrase(d structDiff) string {
+	switch {
+	case len(d.drops) > 0 && len(d.unset) > 0:
+		return fmt.Sprintf("serializes by field name but drops {%s} and leaves {%s} unset",
+			strings.Join(d.drops, ", "), strings.Join(d.unset, ", "))
+	case len(d.drops) > 0:
+		return fmt.Sprintf("serializes by field name but drops {%s}", strings.Join(d.drops, ", "))
+	case len(d.unset) > 0:
+		return fmt.Sprintf("serializes by field name but leaves {%s} unset", strings.Join(d.unset, ", "))
+	default:
+		return "has identical fields but is a distinct Go type"
+	}
 }
 
 func pointerInsensitiveMatch(got, want types.Type) bool {

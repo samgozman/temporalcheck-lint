@@ -33,3 +33,19 @@ func TestExecArgs_StrictPointers(t *testing.T) {
 	a := execargs.NewAnalyzer(execargs.Settings{StrictTypes: true, StrictPointers: true})
 	analysistest.Run(t, analysistest.TestData(), a, "temporalcheckfixtures/strictptr")
 }
+
+// TestExecArgs_StructShape: with only StructShape on (proving independence),
+// passing one struct where a different struct is wanted is reported, with the
+// drift detail; incompatible/no-overlap structs surface as strict-types errors.
+func TestExecArgs_StructShape(t *testing.T) {
+	a := execargs.NewAnalyzer(execargs.Settings{StructShape: true})
+	analysistest.Run(t, analysistest.TestData(), a, "temporalcheckfixtures/structshape")
+}
+
+// TestExecArgs_StructShapeOff: with StrictTypes on but StructShape off, the
+// wire-compatible-but-distinct struct is silent (moved out of strict-types),
+// while incompatible and no-overlap structs remain strict-types errors.
+func TestExecArgs_StructShapeOff(t *testing.T) {
+	a := execargs.NewAnalyzer(execargs.Settings{StrictTypes: true})
+	analysistest.Run(t, analysistest.TestData(), a, "temporalcheckfixtures/structshapeoff")
+}

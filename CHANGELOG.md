@@ -20,6 +20,15 @@ Initial proof of concept.
   - Value-vs-pointer mismatches (`T`/`*T` and `[]T`/`[]*T`) are treated as
     compatible by default, matching Temporal's `DataConverter`; opt into flagging
     them with `strict-pointers`.
+  - **Struct shape** — opt-in `strict-struct-shape` flags passing one struct type
+    where a different struct is wanted. The `DataConverter` serializes by field
+    name (JSON-tag aware), so distinct structs can round-trip; the message names
+    the fields that silently drop or stay unset. A shared field with an
+    incompatible type, or no shared fields at all, is reported as a `strict-types`
+    error.
+  - Each diagnostic is tagged with the source that produced it: `(arity)`,
+    `(strict-types)`, `(strict-pointers)`, or `(strict-struct-shape)`. The three type
+    checks are independent opt-ins; arity is always on.
   - Settings are grouped per analyzer under an `execargs:` block, leaving room
     for future analyzers to carry their own settings.
   - Variadic targets, package-level function activities and aliased imports of
