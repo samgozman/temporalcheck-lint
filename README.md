@@ -1,84 +1,11 @@
-# temporalcheck-lint (PoC)
+# temporalcheck-lint
 
 A [golangci-lint](https://golangci-lint.run) module plugin for static analysis
-of [Temporal](https://temporal.io) Go SDK code. This is a **proof of concept**
-with a single analyzer (`execargs`); it's laid out so more Temporal checks can
-be added under the same plugin later.
+of [Temporal](https://temporal.io) Go SDK code. Several Temporal SDK APIs take
+their arguments as `interface{}`, which erases compile-time checking; this plugin
+provides analyzers that recover those checks statically.
 
-## The problem
-
-`workflow.ExecuteActivity`, `workflow.ExecuteLocalActivity` and
-`workflow.ExecuteChildWorkflow` take the target as `interface{}` and its
-arguments as `...interface{}`:
-
-```go
-func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future
-```
-
-So the compiler can't help you. Given this activity:
-
-```go
-// Greet(ctx context.Context, name string) (string, error)
-```
-
-all of these build fine and only blow up at run time:
-
-```go
-var a *Activities
-
-workflow.ExecuteActivity(ctx, a.Greet)               // missing name
-workflow.ExecuteActivity(ctx, a.Greet, 42)           // name is a string, not int
-workflow.ExecuteActivity(ctx, a.Greet, "x", "extra") // one argument too many
-```
-
-## What this checks
-
-The `execargs` analyzer resolves the **real signature** of the referenced
-activity / child-workflow function (across files and packages) and checks the
-call site against it:
-
-- **Arity** — the number of arguments passed matches the number the target
-  expects, after accounting for the framework-injected leading parameter. Always
-  on; this is the false-positive-free baseline.
-- **Types** — each argument is assignable to the corresponding parameter. Opt-in
-  via `strict-types` (off by default).
-- **Struct shape** — passing one struct type where a *different* struct type is
-  wanted. The `DataConverter` serializes by field name, so distinct structs can
-  round-trip while silently dropping or zero-filling mismatched fields — it works
-  until a field is renamed or starts to matter. Opt-in via `strict-struct-shape`
-  (off by default).
-
-The injected leading parameter is handled per entry point:
-
-| Entry point            | Injected first parameter         | Skipped when matching args |
-|------------------------|----------------------------------|----------------------------|
-| `ExecuteActivity`      | `context.Context` (**optional**) | only if present            |
-| `ExecuteLocalActivity` | `context.Context` (**optional**) | only if present            |
-| `ExecuteChildWorkflow` | `workflow.Context` (required)    | always                     |
-
-So for `Greet(ctx context.Context, name string)`, the checker expects exactly
-**one** call-site argument (`name`), of type `string`.
-
-### Example diagnostics
-
-```
-workflow.go:14  ExecuteActivity: activity "Greet" expects 1 argument, got 0 (arity)
-workflow.go:17  ExecuteActivity: activity "Greet" expects 1 argument, got 2 (arity)
-workflow.go:20  ExecuteActivity: arg 1 of "Greet" has type int, want string (strict-types)
-workflow.go:23  ExecuteActivity: arg 2 of "ProcessOrder" has type string, want int (strict-types)
-workflow.go:30  ExecuteActivity: arg 1 of "Save" has type []*Tier, want []Tier (strict-pointers)
-workflow.go:34  ExecuteActivity: arg 1 of "Charge" sends *PayParams, target wants *ChargeParams — serializes by field name but drops {Note} and leaves {Currency} unset (strict-struct-shape)
-workflow.go:38  ExecuteChildWorkflow: child workflow "ShipmentWorkflow" expects 1 argument, got 0 (arity)
-```
-
-The message names the **entry point** and ends with the **source** in
-parentheses — `(arity)`, `(strict-types)`, `(strict-pointers)`, or
-`(strict-struct-shape)` — so you can see which check fired and which setting controls it
-(golangci-lint then appends the linter name, e.g. `(execargs)`, after that).
-`arg N` numbers the arguments **you write at the call site** (after the target),
-not the target's parameter positions.
-
-## Use it as a golangci-lint plugin
+## Install
 
 Module plugins are compiled into golangci-lint itself; see the
 [Module Plugin System docs](https://golangci-lint.run/docs/plugins/module-plugins/).
@@ -110,21 +37,123 @@ Module plugins are compiled into golangci-lint itself; see the
    ./bin/custom-gcl run   # or: make run
    ```
 
-## Settings
+## Configuration
 
-Settings are grouped per analyzer, so each analyzer keeps its own block as the
-linter grows:
+golangci-lint exposes the plugin under the name **`temporalcheck`**. Settings are
+grouped per analyzer, so each analyzer keeps its own block:
 
 ```yaml
 settings:
   execargs:
     disabled: false
     strict-types: true
-    strict-pointers: false
-    strict-struct-shape: false
+    strict-pointers: true
+    strict-struct-shape: true
 ```
 
+Each analyzer's keys are documented in its section under [Analyzers](#analyzers).
+
+## Suppressing with `//nolint`
+
+Suppression is handled by the plugin itself, so a single call can be exempted
+whether you run it under golangci-lint or standalone. Use the plugin name
+**`temporalcheck`** (not an analyzer name like `execargs`). A directive suppresses
+the call when it is bare (`//nolint`), names `all`, or names `temporalcheck`:
+
+```go
+// Suppress one call (anchor the directive anywhere on the call's lines):
+_ = workflow.ExecuteActivity(ctx, a.Greet) //nolint:temporalcheck // registered by name elsewhere
+
+// Suppress an entire file: put the directive before the package clause:
+//nolint:temporalcheck
+package worker
+```
+
+A directive that names only other linters (e.g. `//nolint:gocritic`), or an
+analyzer name, does not suppress this plugin. To turn an analyzer off across the
+whole project, use its `disabled` setting instead.
+
+## Analyzers
+
+Each analyzer is documented below with the same shape: **the problem** it
+addresses, **what it checks**, its **settings**, and its **limitations**.
+
 ### `execargs`
+
+#### The problem
+
+`workflow.ExecuteActivity`, `workflow.ExecuteLocalActivity` and
+`workflow.ExecuteChildWorkflow` take the target as `interface{}` and its
+arguments as `...interface{}`:
+
+```go
+func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future
+```
+
+So the compiler can't help you. Given this activity:
+
+```go
+// Greet(ctx context.Context, name string) (string, error)
+```
+
+all of these build fine and only blow up at run time:
+
+```go
+var a *Activities
+
+workflow.ExecuteActivity(ctx, a.Greet)               // missing name
+workflow.ExecuteActivity(ctx, a.Greet, 42)           // name is a string, not int
+workflow.ExecuteActivity(ctx, a.Greet, "x", "extra") // one argument too many
+```
+
+#### What it checks
+
+`execargs` resolves the **real signature** of the referenced activity /
+child-workflow function (across files and packages) and checks the call site
+against it:
+
+- **Arity** — the number of arguments passed matches the number the target
+  expects, after accounting for the framework-injected leading parameter. Always
+  on; this is the false-positive-free baseline.
+- **Types** — each argument is assignable to the corresponding parameter. Opt-in
+  via `strict-types` (off by default).
+- **Struct shape** — passing one struct type where a *different* struct type is
+  wanted. The `DataConverter` serializes by field name, so distinct structs can
+  round-trip while silently dropping or zero-filling mismatched fields — it works
+  until a field is renamed or starts to matter. Opt-in via `strict-struct-shape`
+  (off by default).
+
+The injected leading parameter is handled per entry point:
+
+| Entry point            | Injected first parameter         | Skipped when matching args |
+|------------------------|----------------------------------|----------------------------|
+| `ExecuteActivity`      | `context.Context` (**optional**) | only if present            |
+| `ExecuteLocalActivity` | `context.Context` (**optional**) | only if present            |
+| `ExecuteChildWorkflow` | `workflow.Context` (required)    | always                     |
+
+So for `Greet(ctx context.Context, name string)`, the checker expects exactly
+**one** call-site argument (`name`), of type `string`.
+
+##### Example diagnostics
+
+```
+workflow.go:14  ExecuteActivity: activity "Greet" expects 1 argument, got 0 (arity)
+workflow.go:17  ExecuteActivity: activity "Greet" expects 1 argument, got 2 (arity)
+workflow.go:20  ExecuteActivity: arg 1 of "Greet" has type int, want string (strict-types)
+workflow.go:23  ExecuteActivity: arg 2 of "ProcessOrder" has type string, want int (strict-types)
+workflow.go:30  ExecuteActivity: arg 1 of "Save" has type []*Tier, want []Tier (strict-pointers)
+workflow.go:34  ExecuteActivity: arg 1 of "Charge" sends *PayParams, target wants *ChargeParams — serializes by field name but drops {Note} and leaves {Currency} unset (strict-struct-shape)
+workflow.go:38  ExecuteChildWorkflow: child workflow "ShipmentWorkflow" expects 1 argument, got 0 (arity)
+```
+
+The message names the **entry point** and ends with the **source** in
+parentheses — `(arity)`, `(strict-types)`, `(strict-pointers)`, or
+`(strict-struct-shape)` — so you can see which check fired and which setting controls it
+(golangci-lint then appends the linter name, e.g. `(execargs)`, after that).
+`arg N` numbers the arguments **you write at the call site** (after the target),
+not the target's parameter positions.
+
+#### Settings
 
 By default the analyzer only checks **arity** (the false-positive-free part).
 The three checks below are independent, opt-in layers — enable any combination.
@@ -153,28 +182,7 @@ The three settings are orthogonal: each can be enabled on its own (e.g.
 `strict-struct-shape` without `strict-types`), and every diagnostic is tagged
 with the setting that produced it.
 
-### Suppressing with `//nolint`
-
-`execargs` honors `//nolint` directives itself, so a single call can be exempted
-whether you run it under golangci-lint or standalone. golangci-lint exposes this
-plugin under the name **`temporalcheck`** (not the analyzer name `execargs`), so
-that is the name to use. A directive suppresses the call when it is bare
-(`//nolint`), names `all`, or names `temporalcheck`:
-
-```go
-// Suppress one call (anchor the directive anywhere on the call's lines):
-_ = workflow.ExecuteActivity(ctx, a.Greet) //nolint:temporalcheck // registered by name elsewhere
-
-// Suppress an entire file: put the directive before the package clause:
-//nolint:temporalcheck
-package worker
-```
-
-A directive that names only other linters (e.g. `//nolint:gocritic`), or the
-analyzer name `execargs`, does not suppress this linter. To turn `execargs` off
-across the whole project, use the `disabled` setting instead.
-
-## How it works
+#### How it works
 
 `GetLoadMode()` returns `LoadModeTypesInfo`, so the pass has full type
 information. For each call the analyzer:
@@ -189,7 +197,7 @@ information. For each call the analyzer:
    compares the remaining parameters against the call-site arguments using
    `types.AssignableTo`.
 
-## Known limitations (it's a PoC)
+#### Limitations
 
 - **Type check is stricter than Temporal.** Temporal serializes arguments
   through its `DataConverter`, so the wire-level contract is looser than Go
@@ -221,12 +229,12 @@ make vet
 make conformance   # build ./conformance against the real Temporal SDK
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for how the linter and its fixtures are
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how the plugin and its fixtures are
 organised.
 
 ### The stub and the conformance check
 
-The analyzer never imports the Temporal SDK — it matches calls by package path
+The analyzers never import the Temporal SDK — they match calls by package path
 through `go/types`. The SDK only appears in the **test fixtures**, which use a
 tiny local stub (`testdata/temporalsdk/`) so the tests stay hermetic and
 offline.
@@ -265,8 +273,10 @@ temporalcheck-lint/
 └── go.mod
 ```
 
-Adding the next Temporal check means dropping a new analyzer package next to
-`execargs/` and appending it to `BuildAnalyzers` in `plugin.go`.
+Each analyzer lives in its own package under `temporalcheck/` with the same
+internal layout as `execargs/` (analyzer + dispatch, matching logic, `//nolint`
+handling, and a `testdata/` fixture module) and is registered in
+`BuildAnalyzers` in `plugin.go`.
 
 ## License
 
