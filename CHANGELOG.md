@@ -34,6 +34,14 @@ Initial proof of concept.
   - Variadic targets, package-level function activities and aliased imports of
     the workflow package are supported; string-registered targets and spread
     (`args...`) calls are intentionally skipped.
+- `stringtarget` analyzer (opt-in, off by default): flags
+  `workflow.ExecuteActivity`, `workflow.ExecuteLocalActivity` and
+  `workflow.ExecuteChildWorkflow` calls whose target is named by **string** (a
+  literal, a string variable, or a named string type) instead of a function
+  reference. A string target can't be resolved to a signature, so it escapes
+  `execargs`; this check surfaces those call sites so they can be refactored to a
+  function reference that `execargs` *can* verify. Diagnostics are tagged
+  `(string-target)`; enable via the `stringtarget.enabled` setting.
 - Hermetic, offline `analysistest` fixtures: `testdata/` is a self-contained
   module that resolves `go.temporal.io/sdk` via a local stub, so it resolves in
   IDEs without pulling the real SDK.

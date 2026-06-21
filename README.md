@@ -49,6 +49,8 @@ settings:
     strict-types: true
     strict-pointers: true
     strict-struct-shape: true
+  stringtarget:
+    enabled: true
 ```
 
 Each analyzer's keys are documented in its section under [Analyzers](#analyzers).
@@ -207,7 +209,9 @@ information. For each call the analyzer:
   The **arity** check is the false-positive-free part and runs by default; the
   type check is opt-in via `strict-types`.
 - **String-registered targets are skipped.** `ExecuteActivity(ctx, "MyActivity", ...)`
-  can't be resolved to a signature statically, so it's ignored.
+  can't be resolved to a signature statically, so it's ignored here — the opt-in
+  [`stringtarget`](#stringtarget) analyzer flags those call sites instead, so you
+  can refactor them to a function reference that `execargs` *can* check.
 - **Spread calls are skipped.** `ExecuteActivity(ctx, fn, slice...)` can't be
   matched positionally.
 - **Method expressions and dot-imports are out of scope.**
@@ -219,6 +223,65 @@ information. For each call the analyzer:
   converter with different semantics isn't modeled. Embedded-field promotion is
   not followed, and slices/maps of distinct structs fall back to `strict-types`
   rather than a per-field drift report.
+
+### `stringtarget`
+
+#### The problem
+
+Temporal lets you launch an activity or child workflow by its registered
+**string name** instead of by a reference to the Go function:
+
+```go
+workflow.ExecuteActivity(ctx, "MyActivity", arg1, arg2)
+```
+
+That string is opaque. It can't be resolved to a signature at compile time, so:
+
+- the number and types of the trailing arguments go **unchecked**, and a typo in
+  the name fails only at run time; and
+- it **blinds `execargs`**, which silently skips any call whose target isn't a
+  resolvable function value.
+
+Passing the function reference instead — `workflow.ExecuteActivity(ctx, a.MyActivity, …)`
+— is better on its own terms (the name is derived from the function rather than
+duplicated as a fragile string), and it's exactly what lets the rest of this
+plugin verify the call.
+
+#### What it checks
+
+`stringtarget` flags every `ExecuteActivity` / `ExecuteLocalActivity` /
+`ExecuteChildWorkflow` call whose target argument is a string — a literal, a
+string variable, or a named string type — so you can refactor it to a function
+reference. A call that already passes a function reference is never flagged.
+
+This check is **off by default**: naming a target by string is a legitimate,
+sometimes necessary pattern (for example an activity implemented in another
+service or language), so flagging it is opt-in.
+
+##### Example diagnostics
+
+```
+workflow.go:14  ExecuteActivity: target "MyActivity" is named by string; pass the function reference instead so its arguments can be checked statically (string-target)
+workflow.go:18  ExecuteChildWorkflow: the target is named by string; pass the function reference instead so its arguments can be checked statically (string-target)
+```
+
+The message names the **entry point** and ends with the source `(string-target)`
+(golangci-lint then appends the linter name, `(stringtarget)`, after that). When
+the target is a string literal the diagnostic quotes its value; for a string
+variable it falls back to a generic subject.
+
+#### Settings
+
+| Key       | Type | Default | Description                                                                          |
+|-----------|------|---------|--------------------------------------------------------------------------------------|
+| `enabled` | bool | `false` | Turn the `stringtarget` analyzer on — it reports nothing unless explicitly enabled    |
+
+#### Limitations
+
+- **It does not resolve the named target.** This analyzer only reports *that* a
+  target is named by string; it can't map the name to a signature (see the
+  `execargs` limitation above for why that's not statically possible across
+  packages). Its purpose is to steer you toward the form `execargs` can check.
 
 ## Development
 
@@ -255,17 +318,24 @@ temporalcheck-lint/
 ├── temporalcheck/
 │   ├── plugin.go                 # register.Plugin("temporalcheck", ...)
 │   ├── plugin_internal_test.go
-│   └── execargs/
-│       ├── execargs.go           # settings, analyzer, call dispatch
-│       ├── check.go              # signature matching + helpers
+│   ├── execargs/
+│   │   ├── execargs.go           # settings, analyzer, call dispatch
+│   │   ├── check.go              # signature matching + helpers
+│   │   ├── nolint.go             # //nolint directive suppression
+│   │   ├── execargs_test.go      # analysistest
+│   │   ├── execargs_internal_test.go
+│   │   ├── nolint_internal_test.go
+│   │   └── testdata/                  # self-contained fixture module (see below)
+│   │       ├── go.mod                 # replace go.temporal.io/sdk => ./temporalsdk
+│   │       ├── good/ bad/ notypes/    # fixture packages (// want assertions)
+│   │       └── temporalsdk/           # local stub module for the Temporal SDK
+│   └── stringtarget/             # opt-in: flag string-named Execute* targets
+│       ├── stringtarget.go       # settings, analyzer, call dispatch
 │       ├── nolint.go             # //nolint directive suppression
-│       ├── execargs_test.go      # analysistest
-│       ├── execargs_internal_test.go
+│       ├── stringtarget_test.go  # analysistest
+│       ├── stringtarget_internal_test.go
 │       ├── nolint_internal_test.go
-│       └── testdata/                  # self-contained fixture module (see below)
-│           ├── go.mod                 # replace go.temporal.io/sdk => ./temporalsdk
-│           ├── good/ bad/ notypes/    # fixture packages (// want assertions)
-│           └── temporalsdk/           # local stub module for the Temporal SDK
+│       └── testdata/             # self-contained fixture module
 ├── conformance/                  # CI-only module: real-SDK contract test (see below)
 ├── .custom-gcl.yml               # custom golangci-lint build config
 ├── .golangci.yml                 # example consumer config (also self-lints this repo)

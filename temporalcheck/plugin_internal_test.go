@@ -14,6 +14,9 @@ func TestNew(t *testing.T) {
 			"strict-pointers":     true,
 			"strict-struct-shape": true,
 		},
+		"stringtarget": map[string]any{
+			"enabled": true,
+		},
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -23,11 +26,14 @@ func TestNew(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildAnalyzers: %v", err)
 	}
-	if len(analyzers) != 1 {
-		t.Fatalf("BuildAnalyzers returned %d analyzers, want 1", len(analyzers))
+	want := []string{"execargs", "stringtarget"}
+	if len(analyzers) != len(want) {
+		t.Fatalf("BuildAnalyzers returned %d analyzers, want %d", len(analyzers), len(want))
 	}
-	if got := analyzers[0].Name; got != "execargs" {
-		t.Errorf("analyzer name = %q, want %q", got, "execargs")
+	for i, name := range want {
+		if got := analyzers[i].Name; got != name {
+			t.Errorf("analyzer[%d] name = %q, want %q", i, got, name)
+		}
 	}
 
 	if got := p.GetLoadMode(); got != register.LoadModeTypesInfo {
@@ -60,8 +66,8 @@ func TestNew_Disabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildAnalyzers: %v", err)
 	}
-	if len(analyzers) != 1 {
-		t.Fatalf("BuildAnalyzers returned %d analyzers, want 1", len(analyzers))
+	if len(analyzers) != 2 {
+		t.Fatalf("BuildAnalyzers returned %d analyzers, want 2", len(analyzers))
 	}
 }
 

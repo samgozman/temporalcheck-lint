@@ -29,3 +29,9 @@ linters:
             # DataConverter serializes by field name, so distinct structs can
             # round-trip while silently dropping/zero-filling fields (default false).
             strict-struct-shape: true
+          stringtarget:
+            # Flag Execute* calls that name the target by its registered string
+            # instead of passing the function reference, which can't be checked
+            # statically and blinds execargs (default false). Opt in to be nudged
+            # toward a function reference that execargs can verify.
+            enabled: true

@@ -8,6 +8,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/execargs"
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/stringtarget"
 )
 
 func init() {
@@ -18,7 +19,8 @@ func init() {
 // .golangci.yml. Each analyzer gets its own nested block so analyzers added
 // later carry their own settings without colliding in a flat namespace.
 type Settings struct {
-	Execargs ExecargsSettings `json:"execargs"`
+	Execargs     ExecargsSettings     `json:"execargs"`
+	StringTarget StringTargetSettings `json:"stringtarget"`
 }
 
 // ExecargsSettings configures the execargs analyzer. Pointers distinguish
@@ -47,6 +49,16 @@ type ExecargsSettings struct {
 	// can round-trip while silently dropping or zero-filling mismatched fields;
 	// this is the rarest but most dangerous case, hence its own opt-in.
 	StructShape *bool `json:"strict-struct-shape"`
+}
+
+// StringTargetSettings configures the stringtarget analyzer, which flags
+// Execute* calls that name the target by its registered string instead of
+// passing the function reference.
+type StringTargetSettings struct {
+	// Enabled turns the analyzer on (default false). Naming a target by string
+	// is a legitimate pattern -- e.g. an activity implemented in another service
+	// or language -- so this check is opt-in, like the strict execargs layers.
+	Enabled *bool `json:"enabled"`
 }
 
 type plugin struct {
@@ -80,12 +92,19 @@ func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 	if p.settings.Execargs.StructShape != nil {
 		structShape = *p.settings.Execargs.StructShape
 	}
+	stringTargetEnabled := false
+	if p.settings.StringTarget.Enabled != nil {
+		stringTargetEnabled = *p.settings.StringTarget.Enabled
+	}
 	return []*analysis.Analyzer{
 		execargs.NewAnalyzer(execargs.Settings{
 			Disabled:       disabled,
 			StrictTypes:    strictTypes,
 			StrictPointers: strictPointers,
 			StructShape:    structShape,
+		}),
+		stringtarget.NewAnalyzer(stringtarget.Settings{
+			Enabled: stringTargetEnabled,
 		}),
 		// Future Temporal analyzers (e.g. registration coverage, retry-policy
 		// sanity, non-determinism heuristics) plug in here.
