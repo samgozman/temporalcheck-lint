@@ -1,5 +1,5 @@
-// Package notypes is exercised with CheckTypes disabled: type mismatches must
-// be silent, while the arity check must still fire.
+// Package notypes is exercised with StrictTypes disabled (the default): type
+// mismatches must be silent, while the arity check must still fire.
 package notypes
 
 import (
@@ -21,13 +21,13 @@ func (a *Activities) Tag(ctx context.Context, ids ...string) error {
 func Workflow(ctx workflow.Context) error {
 	var a *Activities
 
-	// Correct arity, wrong type: silenced because check-types is off.
+	// Correct arity, wrong type: silenced because strict-types is off.
 	_ = workflow.ExecuteActivity(ctx, a.Greet, 42)
 
 	// Variadic, wrong element types: also silenced.
 	_ = workflow.ExecuteActivity(ctx, a.Tag, 1, 2)
 
-	// Arity is always checked, regardless of check-types.
+	// Arity is always checked, regardless of strict-types.
 	_ = workflow.ExecuteActivity(ctx, a.Greet) // want `ExecuteActivity: activity "Greet" expects 1 argument, got 0`
 
 	return nil

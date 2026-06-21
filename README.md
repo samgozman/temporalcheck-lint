@@ -38,9 +38,10 @@ activity / child-workflow function (across files and packages) and checks the
 call site against it:
 
 - **Arity** — the number of arguments passed matches the number the target
-  expects, after accounting for the framework-injected leading parameter.
-- **Types** — each argument is assignable to the corresponding parameter
-  (toggle with `check-types`).
+  expects, after accounting for the framework-injected leading parameter. Always
+  on; this is the false-positive-free baseline.
+- **Types** — each argument is assignable to the corresponding parameter. Opt-in
+  via `strict-types` (off by default).
 
 The injected leading parameter is handled per entry point:
 
@@ -107,23 +108,26 @@ linter grows:
 ```yaml
 settings:
   execargs:
-    check-types: true
+    strict-types: true
     strict-pointers: false
 ```
 
 ### `execargs`
 
+By default the analyzer only checks **arity** (the false-positive-free part);
+the stricter checks are opt-in.
+
 | Key               | Type | Default | Description                                                                                       |
 |-------------------|------|---------|---------------------------------------------------------------------------------------------------|
-| `check-types`     | bool | `true`  | Also check argument *types*, not just the argument count                                           |
+| `strict-types`    | bool | `false` | Also check argument *types*, not just the argument count                                           |
 | `strict-pointers` | bool | `false` | Flag a value passed where a pointer is expected (and vice versa), including `[]T` vs `[]*T`        |
 
 Temporal's default `DataConverter` serializes `T` and `*T` (and `[]T` and
-`[]*T`) to the same wire form, so by default the type check treats them as
-interchangeable. Set `strict-pointers: true` to be warned about such mismatches
-anyway — handy if you rely on that equivalence and want a heads-up before a
-`DataConverter` change could break it. It has no effect while `check-types` is
-off.
+`[]*T`) to the same wire form, so even with `strict-types` on the type check
+treats them as interchangeable. Set `strict-pointers: true` to be warned about
+such mismatches anyway — handy if you rely on that equivalence and want a
+heads-up before a `DataConverter` change could break it. It has no effect while
+`strict-types` is off.
 
 ## How it works
 
@@ -145,10 +149,10 @@ information. For each call the analyzer:
 - **Type check is stricter than Temporal.** Temporal serializes arguments
   through its `DataConverter`, so the wire-level contract is looser than Go
   assignability (e.g. `int` vs `int32` may round-trip fine via JSON yet be
-  flagged here). Value-vs-pointer mismatches are allowed by default (see
-  `strict-pointers`), but other looseness is not modeled. The **arity** check is
-  the false-positive-free part; set `check-types: false` if the type half is
-  noisy for your codebase.
+  flagged here). Value-vs-pointer mismatches are allowed even under
+  `strict-types` (see `strict-pointers`), but other looseness is not modeled.
+  The **arity** check is the false-positive-free part and runs by default; the
+  type check is opt-in via `strict-types`.
 - **String-registered targets are skipped.** `ExecuteActivity(ctx, "MyActivity", ...)`
   can't be resolved to a signature statically, so it's ignored.
 - **Spread calls are skipped.** `ExecuteActivity(ctx, fn, slice...)` can't be

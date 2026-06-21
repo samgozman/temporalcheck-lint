@@ -15,8 +15,13 @@ Initial proof of concept.
   - **Arity** — the number of arguments matches what the target expects, after
     skipping the framework-injected leading parameter (`context.Context` for
     activities, `workflow.Context` for child workflows).
-  - **Types** — each argument is assignable to its parameter (toggle with the
-    `check-types` setting; arity is always checked).
+  - **Types** — each argument is assignable to its parameter (opt-in via the
+    `strict-types` setting; arity is always checked).
+  - Value-vs-pointer mismatches (`T`/`*T` and `[]T`/`[]*T`) are treated as
+    compatible by default, matching Temporal's `DataConverter`; opt into flagging
+    them with `strict-pointers`.
+  - Settings are grouped per analyzer under an `execargs:` block, leaving room
+    for future analyzers to carry their own settings.
   - Variadic targets, package-level function activities and aliased imports of
     the workflow package are supported; string-registered targets and spread
     (`args...`) calls are intentionally skipped.

@@ -35,7 +35,7 @@ func (c *checker) checkSignature(
 			entry, noun(k), name, want, argWord(want), len(args))
 		return
 	}
-	if !c.checkTypes {
+	if !c.strictTypes {
 		return
 	}
 	for i, arg := range args {
@@ -67,7 +67,7 @@ func (c *checker) checkVariadic(
 			entry, noun(k), name, fixed, argWord(fixed), len(args))
 		return
 	}
-	if !c.checkTypes {
+	if !c.strictTypes {
 		return
 	}
 	for i := 0; i < fixed; i++ {

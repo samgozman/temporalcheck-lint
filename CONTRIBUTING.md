@@ -55,8 +55,10 @@ One package per scenario:
 - `good/` — must produce **zero** diagnostics (correct calls, plus the cases we
   intentionally skip: string-registered targets and spread calls).
 - `bad/` — each call carries a `// want` regexp for its expected diagnostic.
-- `notypes/` — run with `check-types` off; type mismatches must be silent while
-  arity is still checked.
+- `notypes/` — run with `strict-types` off (the default); type mismatches must be
+  silent while arity is still checked.
+- `strictptr/` — run with `strict-pointers` on; value-vs-pointer mismatches that
+  are allowed by default must be flagged here.
 - `temporalsdk/` — a minimal stub module standing in for `go.temporal.io/sdk` so
   fixtures type-check without vendoring the real Temporal SDK.
 

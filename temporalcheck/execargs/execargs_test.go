@@ -15,21 +15,21 @@ import (
 // and "crosspkg" carry a // want next to each expected diagnostic. "crosspkg"
 // calls an activity defined in a separate nested package.
 func TestExecArgs(t *testing.T) {
-	a := execargs.NewAnalyzer(execargs.Settings{CheckTypes: true})
+	a := execargs.NewAnalyzer(execargs.Settings{StrictTypes: true})
 	analysistest.Run(t, analysistest.TestData(), a,
 		"temporalcheckfixtures/good", "temporalcheckfixtures/bad", "temporalcheckfixtures/crosspkg")
 }
 
-// TestExecArgs_CheckTypesDisabled: with CheckTypes off, type mismatches are
-// silent but arity is still checked.
-func TestExecArgs_CheckTypesDisabled(t *testing.T) {
-	a := execargs.NewAnalyzer(execargs.Settings{CheckTypes: false})
+// TestExecArgs_StrictTypesDisabled: with StrictTypes off (the default), type
+// mismatches are silent but arity is still checked.
+func TestExecArgs_StrictTypesDisabled(t *testing.T) {
+	a := execargs.NewAnalyzer(execargs.Settings{StrictTypes: false})
 	analysistest.Run(t, analysistest.TestData(), a, "temporalcheckfixtures/notypes")
 }
 
 // TestExecArgs_StrictPointers: with StrictPointers on, value-vs-pointer and
 // []T-vs-[]*T mismatches (silently accepted by default) are reported.
 func TestExecArgs_StrictPointers(t *testing.T) {
-	a := execargs.NewAnalyzer(execargs.Settings{CheckTypes: true, StrictPointers: true})
+	a := execargs.NewAnalyzer(execargs.Settings{StrictTypes: true, StrictPointers: true})
 	analysistest.Run(t, analysistest.TestData(), a, "temporalcheckfixtures/strictptr")
 }

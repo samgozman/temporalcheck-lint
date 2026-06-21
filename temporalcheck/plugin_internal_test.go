@@ -8,7 +8,7 @@ import (
 
 func TestNew(t *testing.T) {
 	p, err := New(map[string]any{
-		"execargs": map[string]any{"check-types": false, "strict-pointers": true},
+		"execargs": map[string]any{"strict-types": true, "strict-pointers": true},
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -30,9 +30,9 @@ func TestNew(t *testing.T) {
 	}
 }
 
-func TestNew_DefaultsCheckTypes(t *testing.T) {
-	// An empty settings block must still build the analyzer (CheckTypes
-	// defaults to true).
+func TestNew_Defaults(t *testing.T) {
+	// An empty settings block must still build the analyzer (strict-types and
+	// strict-pointers both default to false).
 	p, err := New(map[string]any{})
 	if err != nil {
 		t.Fatalf("New: %v", err)

@@ -44,7 +44,7 @@ func TestTargetName(t *testing.T) {
 }
 
 func TestNewAnalyzerMetadata(t *testing.T) {
-	a := NewAnalyzer(Settings{CheckTypes: true})
+	a := NewAnalyzer(Settings{StrictTypes: true})
 	if a.Name != "execargs" {
 		t.Errorf("analyzer name = %q, want %q", a.Name, "execargs")
 	}
