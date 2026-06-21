@@ -30,3 +30,19 @@ func (a *Activities) Notify(ctx context.Context, userID string, tags ...string) 
 func ArchiveAll(ctx context.Context, bucket string) error {
 	return nil
 }
+
+// Payload is a struct argument used to exercise value-vs-pointer and
+// slice-element-pointer assignability.
+type Payload struct{ ID string }
+
+// SaveValue takes a struct value.
+func (a *Activities) SaveValue(ctx context.Context, p Payload) error { return nil }
+
+// SavePointer takes a pointer to the struct.
+func (a *Activities) SavePointer(ctx context.Context, p *Payload) error { return nil }
+
+// SaveValues takes a slice of struct values.
+func (a *Activities) SaveValues(ctx context.Context, ps []Payload) error { return nil }
+
+// SavePointers takes a slice of pointers.
+func (a *Activities) SavePointers(ctx context.Context, ps []*Payload) error { return nil }
