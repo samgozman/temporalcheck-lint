@@ -17,7 +17,11 @@ import (
 
 const (
 	workflowPkg = "go.temporal.io/sdk/workflow"
-	contextPkg  = "context"
+	// workflowInternalPkg is where the SDK actually declares the workflow types.
+	// workflow.Context is published as `type Context = internal.Context`, so the
+	// resolved named type lives here, not in workflowPkg.
+	workflowInternalPkg = "go.temporal.io/sdk/internal"
+	contextPkg          = "context"
 )
 
 // Settings configures the execargs analyzer.

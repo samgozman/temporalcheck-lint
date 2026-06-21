@@ -104,7 +104,7 @@ func skipCount(sig *types.Signature, k kind) int {
 	first := sig.Params().At(0).Type()
 	switch k {
 	case kindChildWorkflow:
-		if named(first, workflowPkg, "Context") {
+		if isWorkflowContext(first) {
 			return 1
 		}
 	case kindActivity:
@@ -113,6 +113,20 @@ func skipCount(sig *types.Signature, k kind) int {
 		}
 	}
 	return 0
+}
+
+// isWorkflowContext reports whether t is workflow.Context. The SDK publishes it
+// as `type Context = internal.Context`, so depending on the gotypesalias mode t
+// is either the alias (named in workflowPkg) or the resolved internal named type
+// (named in workflowInternalPkg); both must count as the injected context.
+func isWorkflowContext(t types.Type) bool {
+	// The resolved type lives in the internal package (or the workflow package
+	// itself, for a direct declaration like the test stub once used).
+	if named(types.Unalias(t), workflowInternalPkg, "Context") {
+		return true
+	}
+	// The unresolved alias is named in the public workflow package.
+	return named(t, workflowPkg, "Context")
 }
 
 func noun(k kind) string {
@@ -140,13 +154,18 @@ func targetName(expr ast.Expr) string {
 	}
 }
 
-// named reports whether t is the named type pkgPath.name.
+// named reports whether t is the named type pkgPath.name. It accepts both
+// defined types and aliases, since both carry an *types.TypeName.
 func named(t types.Type, pkgPath, name string) bool {
-	n, ok := t.(*types.Named)
-	if !ok {
+	var obj *types.TypeName
+	switch n := t.(type) {
+	case *types.Named:
+		obj = n.Obj()
+	case *types.Alias:
+		obj = n.Obj()
+	default:
 		return false
 	}
-	obj := n.Obj()
 	return obj != nil && obj.Pkg() != nil &&
 		obj.Pkg().Path() == pkgPath && obj.Name() == name
 }

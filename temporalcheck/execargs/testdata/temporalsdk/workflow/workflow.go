@@ -5,7 +5,11 @@
 // the analyzer exists to compensate for.
 package workflow
 
-type Context interface{ isWorkflowContext() }
+import "go.temporal.io/sdk/internal"
+
+// Context mirrors the real SDK, which publishes workflow.Context as an alias to
+// an internal type rather than declaring it directly in this package.
+type Context = internal.Context
 
 type Future interface {
 	Get(ctx Context, valuePtr any) error
