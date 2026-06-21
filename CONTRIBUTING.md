@@ -59,6 +59,12 @@ One package per scenario:
   silent while arity is still checked.
 - `strictptr/` — run with `strict-pointers` on; value-vs-pointer mismatches that
   are allowed by default must be flagged here.
+- `structshape/` — run with `strict-struct-shape` on (only); distinct structs
+  that serialize compatibly must be flagged with their field drift, while
+  incompatible/no-overlap structs surface as `strict-types` errors.
+- `structshapeoff/` — run with `strict-types` on but `strict-struct-shape` off;
+  proves the wire-compatible struct case is silent while the hard struct cases
+  remain `strict-types` errors.
 - `temporalsdk/` — a minimal stub module standing in for `go.temporal.io/sdk` so
   fixtures type-check without vendoring the real Temporal SDK.
 

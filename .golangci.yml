@@ -20,6 +20,9 @@ linters:
             # Opt in; arity is always checked and is the false-positive-free part.
             strict-types: true
             # Flag value-vs-pointer mismatches (T vs *T, []T vs []*T), which the
-            # DataConverter otherwise serializes identically (default false). Only
-            # has an effect while strict-types is on.
+            # DataConverter otherwise serializes identically (default false).
             strict-pointers: true
+            # Flag passing one struct type where a different struct is wanted: the
+            # DataConverter serializes by field name, so distinct structs can
+            # round-trip while silently dropping/zero-filling fields (default false).
+            strict-struct-shape: true

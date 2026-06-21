@@ -24,21 +24,30 @@ const (
 	contextPkg          = "context"
 )
 
-// Settings configures the execargs analyzer.
+// Settings configures the execargs analyzer. The three checks below are
+// independent, opt-in layers on top of the always-on arity check; enabling any
+// of them turns on the per-argument type comparison.
 type Settings struct {
-	// StrictTypes also verifies argument types, not just their count. Temporal
-	// serializes arguments through its DataConverter, so Go-level assignability
-	// is stricter than the wire contract; this is off by default so the always-on
-	// arity check stays the false-positive-free baseline.
+	// StrictTypes verifies argument types, not just their count -- a genuine
+	// mismatch such as int where string is wanted. Temporal serializes arguments
+	// through its DataConverter, so Go-level assignability is stricter than the
+	// wire contract; this is off by default so the always-on arity check stays the
+	// false-positive-free baseline.
 	StrictTypes bool
 
-	// StrictPointers makes the type check distinguish a value from a pointer to
-	// it (T vs *T, and []T vs []*T). Temporal's default DataConverter serializes
-	// both to the same wire form, so by default they are treated as compatible.
-	// Enable this to catch such mismatches anyway -- useful if you rely on that
-	// equivalence and want to be warned before a DataConverter change breaks it.
-	// Has no effect when StrictTypes is false.
+	// StrictPointers reports a value passed where a pointer is wanted (T vs *T,
+	// and []T vs []*T). Temporal's default DataConverter serializes both to the
+	// same wire form, so this is off by default; enable it to be warned anyway,
+	// e.g. before a DataConverter change could break that equivalence.
 	StrictPointers bool
+
+	// StructShape reports passing one struct type where a different struct type is
+	// wanted. The DataConverter serializes by field name, so two distinct structs
+	// can round-trip whenever their fields line up -- the call works today but
+	// silently drops or zero-fills any field that does not match, and breaks the
+	// moment a field is renamed or starts to matter. Off by default; this is the
+	// rarest but most dangerous case, so it has its own knob.
+	StructShape bool
 }
 
 // kind tells the checker which leading, framework-injected parameter the target
@@ -60,7 +69,11 @@ var entryPoints = map[string]kind{
 
 // NewAnalyzer builds the execargs analyzer for the given settings.
 func NewAnalyzer(settings Settings) *analysis.Analyzer {
-	c := &checker{strictTypes: settings.StrictTypes, strictPointers: settings.StrictPointers}
+	c := &checker{
+		strictTypes:    settings.StrictTypes,
+		strictPointers: settings.StrictPointers,
+		structShape:    settings.StructShape,
+	}
 	return &analysis.Analyzer{
 		Name: "execargs",
 		Doc:  "check that arguments to Temporal ExecuteActivity/ExecuteLocalActivity/ExecuteChildWorkflow match the target function signature",
@@ -74,6 +87,13 @@ func NewAnalyzer(settings Settings) *analysis.Analyzer {
 type checker struct {
 	strictTypes    bool
 	strictPointers bool
+	structShape    bool
+}
+
+// typeChecksEnabled reports whether any of the opt-in type checks is on, i.e.
+// whether the per-argument type comparison should run at all.
+func (c *checker) typeChecksEnabled() bool {
+	return c.strictTypes || c.strictPointers || c.structShape
 }
 
 func (c *checker) run(pass *analysis.Pass) (any, error) {

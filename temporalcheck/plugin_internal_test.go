@@ -8,7 +8,11 @@ import (
 
 func TestNew(t *testing.T) {
 	p, err := New(map[string]any{
-		"execargs": map[string]any{"strict-types": true, "strict-pointers": true},
+		"execargs": map[string]any{
+			"strict-types":        true,
+			"strict-pointers":     true,
+			"strict-struct-shape": true,
+		},
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
