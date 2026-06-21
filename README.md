@@ -282,11 +282,11 @@ This check is **off by default**: naming a target by string is a legitimate,
 sometimes necessary pattern (for example an activity implemented in another
 service or language), so flagging it is opt-in.
 
-With `strict-tests` on, the same string-target check runs over Temporal's
+With `strict-tests` on, the same string-target check also runs over Temporal's
 `testsuite` mock setups — `(*testsuite.TestWorkflowEnvironment).OnActivity` and
-`.OnWorkflow` — whose target is named by string. It is **independent** of
-`enabled`, so you can flag string-named mocks in tests without flagging
-production `Execute*` calls (or the reverse). Those diagnostics are tagged
+`.OnWorkflow` — whose target is named by string. It is an opt-in layer **gated by
+`enabled`**: `enabled` is the master switch, so with it off the analyzer reports
+nothing regardless of `strict-tests`. Those diagnostics are tagged
 `(strict-tests)` rather than `(string-target)`.
 
 ##### Example diagnostics
@@ -305,8 +305,8 @@ variable it falls back to a generic subject.
 
 | Key            | Type | Default | Description                                                                                       |
 |----------------|------|---------|---------------------------------------------------------------------------------------------------|
-| `enabled`      | bool | `false` | Flag string-named targets in production `Execute*` calls                                          |
-| `strict-tests` | bool | `false` | Flag string-named targets in `testsuite` `OnActivity`/`OnWorkflow` mock setups (independent of `enabled`) |
+| `enabled`      | bool | `false` | Master switch — flag string-named targets in production `Execute*` calls; with this off the analyzer is silent |
+| `strict-tests` | bool | `false` | Also flag string-named targets in `testsuite` `OnActivity`/`OnWorkflow` mock setups (gated by `enabled`) |
 
 #### Limitations
 

@@ -1,6 +1,6 @@
-// Package testsoff is exercised with StrictTests off (and Enabled off): a
+// Package testsoff is exercised with Enabled on but StrictTests off: a
 // string-named testsuite mock setup stays silent. It proves the test-mock check
-// is gated by its own flag, independent of the production Execute* check.
+// has its own flag and the production Execute* check does not bleed into mocks.
 package testsoff
 
 import "go.temporal.io/sdk/testsuite"

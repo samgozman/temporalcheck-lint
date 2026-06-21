@@ -49,10 +49,11 @@ Initial proof of concept.
   `execargs`; this check surfaces those call sites so they can be refactored to a
   function reference that `execargs` *can* verify. Diagnostics are tagged
   `(string-target)`; enable via the `stringtarget.enabled` setting.
-  - **Test mocks** — opt-in `strict-tests` (independent of `enabled`) extends the
-    check to `(*testsuite.TestWorkflowEnvironment).OnActivity` and `.OnWorkflow`
-    setups whose target is named by string. Diagnostics are tagged
-    `(strict-tests)`.
+  - **Test mocks** — opt-in `strict-tests` extends the check to
+    `(*testsuite.TestWorkflowEnvironment).OnActivity` and `.OnWorkflow` setups
+    whose target is named by string. It is a layer on top of the production check,
+    gated by `enabled` (the master switch): with `enabled` off the analyzer is
+    silent regardless of `strict-tests`. Diagnostics are tagged `(strict-tests)`.
 - `optionsdiscard` analyzer (on by default): flags
   `workflow.WithActivityOptions`, `workflow.WithLocalActivityOptions` and
   `workflow.WithChildOptions` calls whose returned context is **discarded** — used

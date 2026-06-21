@@ -35,11 +35,20 @@ func TestStringTarget_Disabled(t *testing.T) {
 	analysistest.Run(t, analysistest.TestData(), a, "stringtargetfixtures/disabled")
 }
 
-// TestStringTarget_StrictTests: with StrictTests on (and Enabled off, proving
-// independence), a string-named OnActivity/OnWorkflow mock setup is reported,
-// while a function-reference target is left alone.
+// TestStringTarget_DisabledGatesStrictTests: Enabled is the master switch, so
+// with Enabled off the analyzer stays silent even when StrictTests is on -- the
+// disabled fixture's string-named mock setup, which StrictTests would otherwise
+// flag, must report nothing.
+func TestStringTarget_DisabledGatesStrictTests(t *testing.T) {
+	a := stringtarget.NewAnalyzer(stringtarget.Settings{Enabled: false, StrictTests: true})
+	analysistest.Run(t, analysistest.TestData(), a, "stringtargetfixtures/disabled")
+}
+
+// TestStringTarget_StrictTests: with Enabled on, StrictTests adds the test-mock
+// check on top of the production one, so a string-named OnActivity/OnWorkflow
+// mock setup is reported, while a function-reference target is left alone.
 func TestStringTarget_StrictTests(t *testing.T) {
-	a := stringtarget.NewAnalyzer(stringtarget.Settings{StrictTests: true})
+	a := stringtarget.NewAnalyzer(stringtarget.Settings{Enabled: true, StrictTests: true})
 	analysistest.Run(t, analysistest.TestData(), a, "stringtargetfixtures/tests")
 }
 

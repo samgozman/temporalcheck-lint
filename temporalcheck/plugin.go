@@ -63,15 +63,16 @@ type ExecargsSettings struct {
 // Execute* calls that name the target by its registered string instead of
 // passing the function reference.
 type StringTargetSettings struct {
-	// Enabled turns the analyzer on for production Execute* calls (default false).
-	// Naming a target by string is a legitimate pattern -- e.g. an activity
-	// implemented in another service or language -- so this check is opt-in, like
-	// the strict execargs layers.
+	// Enabled is the master switch: it turns the analyzer on for production
+	// Execute* calls (default false). Naming a target by string is a legitimate
+	// pattern -- e.g. an activity implemented in another service or language -- so
+	// this check is opt-in, like the strict execargs layers. With Enabled off the
+	// analyzer reports nothing, regardless of StrictTests.
 	Enabled *bool `json:"enabled"`
 
-	// StrictTests turns the check on for Temporal testsuite mock setups
-	// (OnActivity/OnWorkflow named by string). Independent of Enabled, so test
-	// mocks can be checked on their own. Opt-in (default false).
+	// StrictTests extends the check to Temporal testsuite mock setups
+	// (OnActivity/OnWorkflow named by string). It is an opt-in layer on top of the
+	// production check, gated by Enabled. Opt-in (default false).
 	StrictTests *bool `json:"strict-tests"`
 }
 

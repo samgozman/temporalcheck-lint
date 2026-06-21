@@ -66,10 +66,11 @@ type Settings struct {
 	// flagging it is opt-in.
 	Enabled bool
 
-	// StrictTests turns the check on for Temporal testsuite mock setups --
+	// StrictTests extends the check to Temporal testsuite mock setups --
 	// (*testsuite.TestWorkflowEnvironment).OnActivity / .OnWorkflow named by
-	// string. It is independent of Enabled, so test mocks can be checked without
-	// flagging production string targets (and vice versa). Off by default.
+	// string. It is an opt-in layer on top of the production check, gated by
+	// Enabled: with Enabled off the whole analyzer is silent regardless of this
+	// flag. Off by default.
 	StrictTests bool
 }
 
@@ -92,7 +93,10 @@ type checker struct {
 }
 
 func (c *checker) run(pass *analysis.Pass) (any, error) {
-	if !c.enabled && !c.strictTests {
+	// Enabled is the master switch: with it off the analyzer reports nothing,
+	// including the StrictTests test-mock check, which layers on top of the
+	// production check rather than running independently.
+	if !c.enabled {
 		return nil, nil
 	}
 	for _, file := range pass.Files {
@@ -119,10 +123,12 @@ func (c *checker) checkCall(pass *analysis.Pass, nolint nolintInfo, call *ast.Ca
 	if !ok || fn.Pkg() == nil {
 		return
 	}
+	// run() already gated on Enabled, so the production check below is always
+	// active here; StrictTests is the opt-in layer for test mocks on top of it.
 	switch fn.Pkg().Path() {
 	case workflowPkg:
 		// Shape is (ctx, target, args...): the target is the second argument.
-		if c.enabled && entryPoints[fn.Name()] {
+		if entryPoints[fn.Name()] {
 			c.report(pass, nolint, call, fn.Name(), call.Args[1], tagStringTarget)
 		}
 	case workflowInternalPkg:

@@ -1,7 +1,7 @@
-// Package tests is exercised with StrictTests on: a testsuite mock setup --
-// OnActivity/OnWorkflow -- whose target is named by string is reported, while a
-// call that passes the function reference is left alone. StrictTests is
-// independent of Enabled, so this runs with Enabled off.
+// Package tests is exercised with Enabled and StrictTests both on: a testsuite
+// mock setup -- OnActivity/OnWorkflow -- whose target is named by string is
+// reported, while a call that passes the function reference is left alone.
+// StrictTests is an opt-in layer gated by Enabled.
 package tests
 
 import (
