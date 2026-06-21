@@ -51,6 +51,16 @@ type Settings struct {
 	// moment a field is renamed or starts to matter. Off by default; this is the
 	// rarest but most dangerous case, so it has its own knob.
 	StructShape bool
+
+	// StrictTests extends the arity check to Temporal's testsuite mock setups:
+	// (*testsuite.TestWorkflowEnvironment).OnActivity / .OnWorkflow. Those take the
+	// target as interface{} and the matchers as variadic interface{}, erasing the
+	// same arity the Execute* check covers. Unlike Execute*, the matchers must
+	// cover EVERY declared parameter -- including the injected context -- so the
+	// count differs by one. Only arity is checked: the matchers are opaque
+	// (mock.Anything / mock.MatchedBy), never the real typed value, so the
+	// strict-type/pointer/struct layers cannot apply. Off by default.
+	StrictTests bool
 }
 
 // kind tells the checker which leading, framework-injected parameter the target
@@ -70,6 +80,19 @@ var entryPoints = map[string]kind{
 	"ExecuteChildWorkflow": kindChildWorkflow,
 }
 
+// testEnvType is the testsuite type whose mock-setup methods StrictTests checks.
+// The SDK declares it in the internal package and re-publishes it from testsuite
+// as an alias, so the resolved method's receiver lives in workflowInternalPkg.
+const testEnvType = "TestWorkflowEnvironment"
+
+// testEntryPoints maps the TestWorkflowEnvironment mock-setup methods to the noun
+// used in their diagnostics. Both take (target, matchers...), so a missing or
+// extra matcher is an arity bug the same way a misargued Execute* call is.
+var testEntryPoints = map[string]string{
+	"OnActivity": "activity",
+	"OnWorkflow": "workflow",
+}
+
 // NewAnalyzer builds the execargs analyzer for the given settings.
 func NewAnalyzer(settings Settings) *analysis.Analyzer {
 	c := &checker{
@@ -77,6 +100,7 @@ func NewAnalyzer(settings Settings) *analysis.Analyzer {
 		strictTypes:    settings.StrictTypes,
 		strictPointers: settings.StrictPointers,
 		structShape:    settings.StructShape,
+		strictTests:    settings.StrictTests,
 	}
 	return &analysis.Analyzer{
 		Name: "execargs",
@@ -93,6 +117,7 @@ type checker struct {
 	strictTypes    bool
 	strictPointers bool
 	structShape    bool
+	strictTests    bool
 }
 
 // typeChecksEnabled reports whether any of the opt-in type checks is on, i.e.
@@ -124,11 +149,22 @@ func (c *checker) checkCall(pass *analysis.Pass, nolint nolintInfo, call *ast.Ca
 	}
 
 	// Resolve via Uses (not the source text), so aliased imports of the
-	// workflow package still match.
+	// workflow/testsuite packages still match.
 	fn, ok := pass.TypesInfo.Uses[sel.Sel].(*types.Func)
-	if !ok || fn.Pkg() == nil || fn.Pkg().Path() != workflowPkg {
+	if !ok || fn.Pkg() == nil {
 		return
 	}
+	switch fn.Pkg().Path() {
+	case workflowPkg:
+		c.checkExecuteCall(pass, nolint, call, fn)
+	case workflowInternalPkg:
+		if c.strictTests {
+			c.checkTestCall(pass, nolint, call, fn)
+		}
+	}
+}
+
+func (c *checker) checkExecuteCall(pass *analysis.Pass, nolint nolintInfo, call *ast.CallExpr, fn *types.Func) {
 	k, ok := entryPoints[fn.Name()]
 	if !ok {
 		return
@@ -156,5 +192,47 @@ func (c *checker) checkCall(pass *analysis.Pass, nolint nolintInfo, call *ast.Ca
 		return
 	}
 
-	c.checkSignature(pass, call, sel.Sel.Name, k, sig, call.Args[2:])
+	c.checkSignature(pass, call, fn.Name(), k, sig, call.Args[2:])
+}
+
+// checkTestCall verifies the matcher arity of a TestWorkflowEnvironment mock
+// setup -- OnActivity/OnWorkflow. The matchers must cover every declared
+// parameter, so there is no injected context to skip (the way Execute* does);
+// the count is simply the target's parameter count.
+func (c *checker) checkTestCall(pass *analysis.Pass, nolint nolintInfo, call *ast.CallExpr, fn *types.Func) {
+	// Confirm the method is OnActivity/OnWorkflow on testsuite's
+	// TestWorkflowEnvironment, so an unrelated internal method -- e.g. the
+	// MockCallWrapper.Return/Once chained after the setup -- can't match.
+	noun, ok := testEntryPoints[fn.Name()]
+	if !ok || !isReceiver(fn, workflowInternalPkg, testEnvType) {
+		return
+	}
+	if nolint.suppressesCall(pass.Fset, call) {
+		return
+	}
+
+	// A spread call -- OnActivity(fn, matchers...) -- can't be matched positionally.
+	if call.Ellipsis.IsValid() {
+		return
+	}
+
+	// Shape is (target, matchers...); a compiling On* call has at least the
+	// required target argument, so call.Args[0] is safe to read.
+	sig, ok := pass.TypesInfo.TypeOf(call.Args[0]).(*types.Signature)
+	if !ok {
+		// String-named target (stringtarget's job) or otherwise unresolvable.
+		return
+	}
+	// A variadic target makes the matcher count unknowable statically; the mock
+	// framework flattens the variadic, so skip rather than risk a false positive.
+	if sig.Variadic() {
+		return
+	}
+
+	want := sig.Params().Len()
+	got := len(call.Args) - 1
+	if got != want {
+		pass.Reportf(call.Lparen, "%s: mock for %s %q expects %d %s (one per parameter), got %d (%s)",
+			fn.Name(), noun, targetName(call.Args[0]), want, argWord(want), got, tagStrictTests)
+	}
 }

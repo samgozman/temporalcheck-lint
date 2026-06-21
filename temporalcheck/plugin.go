@@ -49,16 +49,28 @@ type ExecargsSettings struct {
 	// can round-trip while silently dropping or zero-filling mismatched fields;
 	// this is the rarest but most dangerous case, hence its own opt-in.
 	StructShape *bool `json:"strict-struct-shape"`
+
+	// StrictTests extends the arity check to Temporal testsuite mock setups
+	// (OnActivity/OnWorkflow). The matchers must cover every parameter, including
+	// the injected context, so the count differs from an Execute* call by one;
+	// only arity is checked since matchers are opaque. Opt-in (default false).
+	StrictTests *bool `json:"strict-tests"`
 }
 
 // StringTargetSettings configures the stringtarget analyzer, which flags
 // Execute* calls that name the target by its registered string instead of
 // passing the function reference.
 type StringTargetSettings struct {
-	// Enabled turns the analyzer on (default false). Naming a target by string
-	// is a legitimate pattern -- e.g. an activity implemented in another service
-	// or language -- so this check is opt-in, like the strict execargs layers.
+	// Enabled turns the analyzer on for production Execute* calls (default false).
+	// Naming a target by string is a legitimate pattern -- e.g. an activity
+	// implemented in another service or language -- so this check is opt-in, like
+	// the strict execargs layers.
 	Enabled *bool `json:"enabled"`
+
+	// StrictTests turns the check on for Temporal testsuite mock setups
+	// (OnActivity/OnWorkflow named by string). Independent of Enabled, so test
+	// mocks can be checked on their own. Opt-in (default false).
+	StrictTests *bool `json:"strict-tests"`
 }
 
 type plugin struct {
@@ -92,9 +104,17 @@ func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 	if p.settings.Execargs.StructShape != nil {
 		structShape = *p.settings.Execargs.StructShape
 	}
+	strictTests := false
+	if p.settings.Execargs.StrictTests != nil {
+		strictTests = *p.settings.Execargs.StrictTests
+	}
 	stringTargetEnabled := false
 	if p.settings.StringTarget.Enabled != nil {
 		stringTargetEnabled = *p.settings.StringTarget.Enabled
+	}
+	stringTargetStrictTests := false
+	if p.settings.StringTarget.StrictTests != nil {
+		stringTargetStrictTests = *p.settings.StringTarget.StrictTests
 	}
 	return []*analysis.Analyzer{
 		execargs.NewAnalyzer(execargs.Settings{
@@ -102,9 +122,11 @@ func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 			StrictTypes:    strictTypes,
 			StrictPointers: strictPointers,
 			StructShape:    structShape,
+			StrictTests:    strictTests,
 		}),
 		stringtarget.NewAnalyzer(stringtarget.Settings{
-			Enabled: stringTargetEnabled,
+			Enabled:     stringTargetEnabled,
+			StrictTests: stringTargetStrictTests,
 		}),
 		// Future Temporal analyzers (e.g. registration coverage, retry-policy
 		// sanity, non-determinism heuristics) plug in here.

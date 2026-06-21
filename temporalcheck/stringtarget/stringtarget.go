@@ -28,9 +28,17 @@ import (
 
 const (
 	workflowPkg = "go.temporal.io/sdk/workflow"
-	// tagStringTarget suffixes the diagnostic so it is clear which check, and
-	// therefore which setting, produced it -- mirroring the execargs tags.
+	// workflowInternalPkg is where the SDK declares the testsuite types. The
+	// testsuite package re-publishes TestWorkflowEnvironment as an alias, so a
+	// resolved OnActivity/OnWorkflow method's receiver lives here.
+	workflowInternalPkg = "go.temporal.io/sdk/internal"
+	testEnvType         = "TestWorkflowEnvironment"
+	// tagStringTarget suffixes the production-call diagnostic so it is clear which
+	// check produced it -- mirroring the execargs tags.
 	tagStringTarget = "string-target"
+	// tagStrictTests suffixes the test-mock diagnostic so it is distinct from the
+	// production string-target one and names the setting that surfaced it.
+	tagStrictTests = "strict-tests"
 )
 
 // entryPoints are the workflow.* functions whose target argument this analyzer
@@ -42,17 +50,32 @@ var entryPoints = map[string]bool{
 	"ExecuteChildWorkflow": true,
 }
 
+// testEntryPoints are the TestWorkflowEnvironment mock-setup methods whose target
+// argument StrictTests inspects. A string target is just as unresolvable in a
+// mock as in a production call.
+var testEntryPoints = map[string]bool{
+	"OnActivity": true,
+	"OnWorkflow": true,
+}
+
 // Settings configures the stringtarget analyzer.
 type Settings struct {
-	// Enabled turns the check on. It is off by default: naming a target by
-	// string is a legitimate, sometimes necessary pattern (e.g. an activity
-	// implemented in another service or language), so flagging it is opt-in.
+	// Enabled turns the check on for production Execute* calls. It is off by
+	// default: naming a target by string is a legitimate, sometimes necessary
+	// pattern (e.g. an activity implemented in another service or language), so
+	// flagging it is opt-in.
 	Enabled bool
+
+	// StrictTests turns the check on for Temporal testsuite mock setups --
+	// (*testsuite.TestWorkflowEnvironment).OnActivity / .OnWorkflow named by
+	// string. It is independent of Enabled, so test mocks can be checked without
+	// flagging production string targets (and vice versa). Off by default.
+	StrictTests bool
 }
 
 // NewAnalyzer builds the stringtarget analyzer for the given settings.
 func NewAnalyzer(settings Settings) *analysis.Analyzer {
-	c := &checker{enabled: settings.Enabled}
+	c := &checker{enabled: settings.Enabled, strictTests: settings.StrictTests}
 	return &analysis.Analyzer{
 		Name: "stringtarget",
 		Doc:  "flag Temporal ExecuteActivity/ExecuteLocalActivity/ExecuteChildWorkflow calls that name the target by its registered string instead of passing the function reference",
@@ -64,11 +87,12 @@ func NewAnalyzer(settings Settings) *analysis.Analyzer {
 // checker threads the analyzer settings through the AST walk so the analyzer
 // stays free of package-level mutable state.
 type checker struct {
-	enabled bool
+	enabled     bool
+	strictTests bool
 }
 
 func (c *checker) run(pass *analysis.Pass) (any, error) {
-	if !c.enabled {
+	if !c.enabled && !c.strictTests {
 		return nil, nil
 	}
 	for _, file := range pass.Files {
@@ -90,25 +114,34 @@ func (c *checker) checkCall(pass *analysis.Pass, nolint nolintInfo, call *ast.Ca
 	}
 
 	// Resolve via Uses (not the source text), so aliased imports of the
-	// workflow package still match.
+	// workflow/testsuite packages still match.
 	fn, ok := pass.TypesInfo.Uses[sel.Sel].(*types.Func)
-	if !ok || fn.Pkg() == nil || fn.Pkg().Path() != workflowPkg {
+	if !ok || fn.Pkg() == nil {
 		return
 	}
-	if !entryPoints[fn.Name()] {
-		return
+	switch fn.Pkg().Path() {
+	case workflowPkg:
+		// Shape is (ctx, target, args...): the target is the second argument.
+		if c.enabled && entryPoints[fn.Name()] {
+			c.report(pass, nolint, call, fn.Name(), call.Args[1], tagStringTarget)
+		}
+	case workflowInternalPkg:
+		// Shape is (target, matchers...): the target is the first argument.
+		if c.strictTests && testEntryPoints[fn.Name()] && isReceiver(fn, workflowInternalPkg, testEnvType) {
+			c.report(pass, nolint, call, fn.Name(), call.Args[0], tagStrictTests)
+		}
 	}
+}
 
+// report flags target when it is named by string, after honoring //nolint. The
+// tag distinguishes a production Execute* call from a testsuite mock setup.
+func (c *checker) report(pass *analysis.Pass, nolint nolintInfo, call *ast.CallExpr, entry string, target ast.Expr, tag string) {
 	// Honor //nolint directives ourselves so suppression works the same way in
 	// standalone/analysistest runs, not only under golangci-lint. Checked after
-	// confirming this is an Execute* call, so unrelated calls cost nothing.
+	// confirming this is a call we inspect, so unrelated calls cost nothing.
 	if nolint.suppressesCall(pass.Fset, call) {
 		return
 	}
-
-	// Shape is always (ctx, target, args...); a compiling Execute* call therefore
-	// has at least two arguments, so call.Args[1] is safe to read.
-	target := call.Args[1]
 	if !isStringType(pass.TypesInfo.TypeOf(target)) {
 		// A function reference (or any non-string value) is exactly what we want
 		// callers to pass; execargs takes it from here.
@@ -121,7 +154,28 @@ func (c *checker) checkCall(pass *analysis.Pass, nolint nolintInfo, call *ast.Ca
 	}
 	pass.Reportf(target.Pos(),
 		"%s: %s is named by string; pass the function reference instead so its arguments can be checked statically (%s)",
-		sel.Sel.Name, subject, tagStringTarget)
+		entry, subject, tag)
+}
+
+// isReceiver reports whether fn is a method whose receiver is (a pointer to) the
+// named type pkgPath.name -- used to confirm a mock-setup method belongs to
+// testsuite's TestWorkflowEnvironment.
+func isReceiver(fn *types.Func, pkgPath, name string) bool {
+	sig, ok := fn.Type().(*types.Signature)
+	if !ok || sig.Recv() == nil {
+		return false
+	}
+	t := sig.Recv().Type()
+	if p, ok := t.Underlying().(*types.Pointer); ok {
+		t = p.Elem()
+	}
+	n, ok := t.(*types.Named)
+	if !ok {
+		return false
+	}
+	obj := n.Obj()
+	return obj != nil && obj.Pkg() != nil &&
+		obj.Pkg().Path() == pkgPath && obj.Name() == name
 }
 
 // isStringType reports whether t is a string -- the typed string, an untyped

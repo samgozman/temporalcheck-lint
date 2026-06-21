@@ -4,7 +4,10 @@
 // so a breaking signature change fails here — the cue to update the stub.
 package conformance
 
-import "go.temporal.io/sdk/workflow"
+import (
+	"go.temporal.io/sdk/testsuite"
+	"go.temporal.io/sdk/workflow"
+)
 
 // execargs reads each Execute* call as (ctx, target, args...). These assignments
 // stop compiling if the real SDK changes that shape; keep them in sync with the
@@ -13,4 +16,15 @@ var (
 	_ func(workflow.Context, interface{}, ...interface{}) workflow.Future              = workflow.ExecuteActivity
 	_ func(workflow.Context, interface{}, ...interface{}) workflow.Future              = workflow.ExecuteLocalActivity
 	_ func(workflow.Context, interface{}, ...interface{}) workflow.ChildWorkflowFuture = workflow.ExecuteChildWorkflow
+)
+
+// The strict-tests checks read each TestWorkflowEnvironment mock setup as
+// (target, matchers...). These assignments stop compiling if the real SDK
+// changes that shape or moves the type out of testsuite; keep them in sync with
+// the testsuite stub at testdata/temporalsdk.
+var testEnv *testsuite.TestWorkflowEnvironment
+
+var (
+	_ func(interface{}, ...interface{}) *testsuite.MockCallWrapper = testEnv.OnActivity
+	_ func(interface{}, ...interface{}) *testsuite.MockCallWrapper = testEnv.OnWorkflow
 )

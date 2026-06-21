@@ -29,9 +29,17 @@ linters:
             # DataConverter serializes by field name, so distinct structs can
             # round-trip while silently dropping/zero-filling fields (default false).
             strict-struct-shape: true
+            # Check the matcher arity of testsuite mock setups, OnActivity and
+            # OnWorkflow (default false). The matchers must cover every parameter,
+            # including the injected context, so the count differs from Execute* by
+            # one; only arity is checked since matchers are opaque.
+            strict-tests: true
           stringtarget:
             # Flag Execute* calls that name the target by its registered string
             # instead of passing the function reference, which can't be checked
             # statically and blinds execargs (default false). Opt in to be nudged
             # toward a function reference that execargs can verify.
             enabled: true
+            # Flag testsuite mock setups (OnActivity/OnWorkflow) whose target is
+            # named by string (default false). Independent of enabled.
+            strict-tests: true
