@@ -17,6 +17,7 @@ import (
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/optionsdiscard"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/sensitiveargs"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/stringtarget"
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/workeroptions"
 )
 
 func init() {
@@ -37,6 +38,7 @@ type Settings struct {
 	ContinueAsNew   ContinueAsNewSettings   `json:"continueasnew"`
 	SensitiveArgs   SensitiveArgsSettings   `json:"sensitiveargs"`
 	OptionsContext  OptionsContextSettings  `json:"optionscontext"`
+	WorkerOptions   WorkerOptionsSettings   `json:"workeroptions"`
 }
 
 // ExecargsSettings configures the execargs analyzer. Pointers distinguish
@@ -190,6 +192,24 @@ type OptionsContextSettings struct {
 	Disabled *bool `json:"disabled"`
 }
 
+// WorkerOptionsSettings configures the workeroptions analyzer, which flags
+// worker.Options literals that set MaxConcurrentWorkflowTask{ExecutionSize,Pollers}
+// to 1 (a worker-boot panic) and, opt-in, worker.New calls whose worker.Options
+// sets no concurrency limits.
+type WorkerOptionsSettings struct {
+	// Disabled turns the analyzer off entirely (default false), which also disables
+	// the default-on worker-panic check. That check is on by default: a workflow-task
+	// field of 1 panics the worker on start, never a deliberate choice, so there is
+	// nothing to opt into.
+	Disabled *bool `json:"disabled"`
+
+	// RequireOptions opts into flagging a worker.New whose worker.Options literal sets
+	// none of the concurrency-limit fields, so the worker runs on the SDK defaults.
+	// Off by default: an empty worker.Options is legitimate when the defaults suit the
+	// deployment.
+	RequireOptions *bool `json:"require-options"`
+}
+
 type plugin struct {
 	settings Settings
 }
@@ -273,6 +293,14 @@ func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 	if p.settings.OptionsContext.Disabled != nil {
 		optionsContextDisabled = *p.settings.OptionsContext.Disabled
 	}
+	workerOptionsDisabled := false
+	if p.settings.WorkerOptions.Disabled != nil {
+		workerOptionsDisabled = *p.settings.WorkerOptions.Disabled
+	}
+	workerOptionsRequireOptions := false
+	if p.settings.WorkerOptions.RequireOptions != nil {
+		workerOptionsRequireOptions = *p.settings.WorkerOptions.RequireOptions
+	}
 	return []*analysis.Analyzer{
 		execargs.NewAnalyzer(execargs.Settings{
 			Disabled:       disabled,
@@ -310,6 +338,10 @@ func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 		}),
 		optionscontext.NewAnalyzer(optionscontext.Settings{
 			Disabled: optionsContextDisabled,
+		}),
+		workeroptions.NewAnalyzer(workeroptions.Settings{
+			Disabled:       workerOptionsDisabled,
+			RequireOptions: workerOptionsRequireOptions,
 		}),
 		// Future Temporal analyzers (e.g. registration coverage, retry-policy
 		// sanity, non-determinism heuristics) plug in here.

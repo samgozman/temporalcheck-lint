@@ -98,3 +98,14 @@ linters:
             # reads never apply. Fires only on a seen contradiction, never on absence,
             # so it is on by default; set true to turn it off.
             disabled: false
+          workeroptions:
+            # Flag worker.Options literals that set MaxConcurrentWorkflowTask{Execution
+            # Size,Pollers} to a constant 1, which panics the worker on start (those
+            # pollers alternate between sticky and non-sticky queues). On by default;
+            # set true to turn the analyzer off entirely.
+            disabled: false
+            # Opt in to also flag worker.New(c, q, worker.Options{...}) whose options
+            # literal sets none of the five concurrency limits, so the worker runs on
+            # the SDK defaults (1k executions, 100k/s) that can overload a self-hosted
+            # cluster (default false).
+            require-options: true

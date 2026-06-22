@@ -10,6 +10,7 @@ import (
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
 	"go.temporal.io/sdk/testsuite"
+	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
 )
 
@@ -76,6 +77,22 @@ var (
 var temporalClient client.Client
 
 var (
-	_ func(context.Context, client.StartWorkflowOptions, interface{}, ...interface{}) (client.WorkflowRun, error)                                = temporalClient.ExecuteWorkflow
+	_ func(context.Context, client.StartWorkflowOptions, interface{}, ...interface{}) (client.WorkflowRun, error)                              = temporalClient.ExecuteWorkflow
 	_ func(context.Context, string, string, interface{}, client.StartWorkflowOptions, interface{}, ...interface{}) (client.WorkflowRun, error) = temporalClient.SignalWithStartWorkflow
+)
+
+// workeroptions reads worker.New as (client, taskQueue, options) -- the options
+// literal is the third argument the require-options check inspects -- and the
+// concurrency-limit fields off worker.Options (re-exported from internal as an
+// alias, like workflow.Context). These references stop compiling if the real SDK
+// changes worker.New's shape or renames/drops any field, the cue to update the
+// stub and the check's panicFields/concurrencyFields lists.
+var (
+	_ func(client.Client, string, worker.Options) worker.Worker = worker.New
+
+	_ = worker.Options{}.MaxConcurrentActivityExecutionSize
+	_ = worker.Options{}.MaxConcurrentWorkflowTaskExecutionSize
+	_ = worker.Options{}.MaxConcurrentActivityTaskPollers
+	_ = worker.Options{}.MaxConcurrentWorkflowTaskPollers
+	_ = worker.Options{}.MaxConcurrentLocalActivityExecutionSize
 )

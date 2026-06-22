@@ -62,6 +62,9 @@ settings:
   sensitiveargs:
     enabled: true
     pattern: "(?i)cvv|pan|card.?number|password|secret|ssn|token"
+  workeroptions:
+    disabled: false
+    require-options: true
 ```
 
 Each analyzer's keys are documented in its section under [Analyzers](#analyzers).
@@ -888,6 +891,78 @@ then appends the linter name, `(optionscontext)`, after that).
   one *missing* the right helper — absence is never flagged, by design.
 - **Plain variables only.** A context held in a struct field or returned from a call
   is not a tracked variable, so it is skipped.
+
+### `workeroptions`
+
+#### The problem
+
+A Temporal worker is built from a `worker.Options` struct passed to `worker.New`,
+and two of its fields are foot-guns the compiler can't catch. The SDK documents
+that `MaxConcurrentWorkflowTaskExecutionSize` and `MaxConcurrentWorkflowTaskPollers`
+"cannot be 1 and will panic if set to that value" — the pollers alternate between
+sticky and non-sticky queues, so a single one deadlocks the worker at boot:
+
+```go
+w := worker.New(c, "task-queue", worker.Options{
+	MaxConcurrentWorkflowTaskPollers: 1, // panics on worker.Run
+})
+```
+
+Separately, an empty `worker.Options{}` leaves the worker on the SDK defaults (1k
+concurrent executions, 100k actions/s) that can overload a self-hosted cluster or
+crash a memory-capped pod.
+
+#### What it checks
+
+`workeroptions` inspects `worker.Options` composite literals with two rules:
+
+- **`(worker-panic)` — on by default.** Flags a literal that sets either
+  workflow-task field to a *constant* `1`, anchoring the diagnostic on the
+  offending value. The fix is `0` (the default) or a value `>= 2`. A non-constant
+  value (`cfg.Pollers`) is skipped, and the activity counterparts
+  (`MaxConcurrentActivityTaskPollers`, …) carry no such restriction, so they are
+  never flagged.
+- **`require-options` — opt-in.** Flags a `worker.New(c, q, worker.Options{…})`
+  whose options literal sets **none** of the five concurrency limits
+  (`MaxConcurrentActivityExecutionSize`, `MaxConcurrentWorkflowTaskExecutionSize`,
+  `MaxConcurrentActivityTaskPollers`, `MaxConcurrentWorkflowTaskPollers`,
+  `MaxConcurrentLocalActivityExecutionSize`). Setting any one — regardless of value
+  — satisfies it, so an activity-only or local-activity-only worker that sets just
+  its own knob is never falsely flagged.
+
+##### Example diagnostics
+
+```
+worker.go:14  worker.Options: MaxConcurrentWorkflowTaskPollers must not be 1 — the worker panics on start; use 0 for the default or a value >= 2 (worker-panic)
+worker.go:22  worker.New: worker.Options sets no concurrency limits, so the worker runs on the SDK defaults (1k executions, 100k/s) that can overload a self-hosted cluster; set MaxConcurrent* limits (require-options)
+```
+
+Each message ends with the rule that produced it — `(worker-panic)` or
+`(require-options)` — and golangci-lint then appends the linter name
+`(workeroptions)`.
+
+#### Settings
+
+| Key               | Type | Default | Description                                                                                |
+|-------------------|------|---------|--------------------------------------------------------------------------------------------|
+| `disabled`        | bool | `false` | Turn the `workeroptions` analyzer off entirely (also disables `worker-panic`)               |
+| `require-options` | bool | `false` | Flag `worker.New` calls whose `worker.Options` literal sets none of the concurrency fields  |
+
+#### Limitations
+
+- **worker-panic is value-aware; require-options is presence-only.** The panic
+  check evaluates the value (only a constant `1` fires); the require-options check
+  only looks at which fields are *set*, never their values.
+- **Constants only for the panic check.** A non-constant value the analyzer can't
+  resolve statically (a variable or expression) is skipped rather than risked as a
+  false positive — including an explicit `MaxConcurrentWorkflowTaskPollers` fed from
+  config.
+- **require-options inspects the literal at the call site only.** If the third
+  argument to `worker.New` is a variable rather than a `worker.Options{…}` literal,
+  the call is skipped (the fields aren't visible there).
+- **Positional and empty literals.** A positional literal can't be mapped to fields
+  without the struct layout, so it is skipped; an empty `worker.Options{}` triggers
+  `require-options` only when passed directly to `worker.New`.
 
 ## Development
 

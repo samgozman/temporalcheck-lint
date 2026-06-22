@@ -166,6 +166,24 @@ Initial proof of concept.
   function parameter, an opaque reassignment, a closure capture, or a branch-dependent
   value. Diagnostics are tagged `(options-context)`. Turn it off via the
   `optionscontext.disabled` setting.
+- `workeroptions` analyzer: inspects `worker.Options` composite literals.
+  - **worker-panic** (on by default): flags a literal that sets
+    `MaxConcurrentWorkflowTaskExecutionSize` or `MaxConcurrentWorkflowTaskPollers`
+    to a constant `1`. Temporal documents that those pollers alternate between
+    sticky and non-sticky queues, so a single one deadlocks the worker, which
+    panics on start. The diagnostic anchors on the offending value; a non-constant
+    value (e.g. `cfg.Pollers`) is skipped, and the activity counterparts carry no
+    such restriction. Tagged `(worker-panic)`.
+  - **require-options** (opt-in via `workeroptions.require-options`): flags a
+    `worker.New(c, q, worker.Options{…})` whose options literal sets none of the
+    five concurrency limits (`MaxConcurrentActivityExecutionSize`,
+    `MaxConcurrentWorkflowTaskExecutionSize`, `MaxConcurrentActivityTaskPollers`,
+    `MaxConcurrentWorkflowTaskPollers`, `MaxConcurrentLocalActivityExecutionSize`),
+    so the worker runs on the SDK defaults (1k executions, 100k/s) that can
+    overload a self-hosted cluster. Any one of the five (regardless of value)
+    satisfies it; only the literal passed directly to `worker.New` is inspected (a
+    variable argument is skipped). Tagged `(require-options)`.
+  - Turn the analyzer off entirely (both rules) via `workeroptions.disabled`.
 - Hermetic, offline `analysistest` fixtures: `testdata/` is a self-contained
   module that resolves `go.temporal.io/sdk` via a local stub, so it resolves in
   IDEs without pulling the real SDK.
@@ -173,5 +191,5 @@ Initial proof of concept.
   real Temporal SDK in CI, catching any drift between the stub and the SDK's
   `Execute*`, `workflow.NewContinueAsNewError`, `client.ExecuteWorkflow`,
   `client.SignalWithStartWorkflow`, `testsuite` `OnActivity`/`OnWorkflow`,
-  `With*Options`, and `Future`/`ChildWorkflowFuture`/`EncodedValue` `.Get`
-  signatures.
+  `With*Options`, `Future`/`ChildWorkflowFuture`/`EncodedValue` `.Get`, and
+  `worker.New`/`worker.Options` signatures.
