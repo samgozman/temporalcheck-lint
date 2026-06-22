@@ -12,6 +12,7 @@ import (
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/execargs"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/futureget"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/lossynumber"
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/nonserializable"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/optionsdiscard"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/stringtarget"
 )
@@ -30,6 +31,7 @@ type Settings struct {
 	ActivityTimeout ActivityTimeoutSettings `json:"activitytimeout"`
 	FutureGet       FutureGetSettings       `json:"futureget"`
 	LossyNumber     LossyNumberSettings     `json:"lossynumber"`
+	NonSerializable NonSerializableSettings `json:"nonserializable"`
 	ContinueAsNew   ContinueAsNewSettings   `json:"continueasnew"`
 }
 
@@ -126,6 +128,24 @@ type LossyNumberSettings struct {
 	Disabled *bool `json:"disabled"`
 }
 
+// NonSerializableSettings configures the nonserializable analyzer, which flags
+// chan and func types (and, opt-in, structs with no exported fields) as
+// activity/workflow parameter or return types -- types Temporal's DataConverter
+// cannot serialize.
+type NonSerializableSettings struct {
+	// Disabled turns the analyzer off entirely (default false). The chan/func check
+	// is on by default: those types can never be serialized, so there is nothing to
+	// opt into. Disable it only for the rare case of a custom DataConverter that can
+	// encode them.
+	Disabled *bool `json:"disabled"`
+
+	// EmptyStruct opts into also flagging a struct with fields but no exported ones
+	// (and not implementing json.Marshaler), which JSON encodes to "{}", silently
+	// dropping its data. Off by default: the json.Marshaler exclusion makes it less
+	// clear-cut than the always-on chan/func check.
+	EmptyStruct *bool `json:"empty-struct"`
+}
+
 // ContinueAsNewSettings configures the continueasnew analyzer, which flags a
 // workflow.NewContinueAsNewError result that is discarded (a bare statement or
 // `_ =`) rather than returned, so the workflow silently ends instead of
@@ -197,6 +217,14 @@ func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 	if p.settings.LossyNumber.Disabled != nil {
 		lossyNumberDisabled = *p.settings.LossyNumber.Disabled
 	}
+	nonSerializableDisabled := false
+	if p.settings.NonSerializable.Disabled != nil {
+		nonSerializableDisabled = *p.settings.NonSerializable.Disabled
+	}
+	nonSerializableEmptyStruct := false
+	if p.settings.NonSerializable.EmptyStruct != nil {
+		nonSerializableEmptyStruct = *p.settings.NonSerializable.EmptyStruct
+	}
 	continueAsNewDisabled := false
 	if p.settings.ContinueAsNew.Disabled != nil {
 		continueAsNewDisabled = *p.settings.ContinueAsNew.Disabled
@@ -224,6 +252,10 @@ func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 		}),
 		lossynumber.NewAnalyzer(lossynumber.Settings{
 			Disabled: lossyNumberDisabled,
+		}),
+		nonserializable.NewAnalyzer(nonserializable.Settings{
+			Disabled:    nonSerializableDisabled,
+			EmptyStruct: nonSerializableEmptyStruct,
 		}),
 		continueasnew.NewAnalyzer(continueasnew.Settings{
 			Disabled: continueAsNewDisabled,

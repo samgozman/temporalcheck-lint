@@ -598,6 +598,89 @@ integer precision (e.g. one that decodes numbers into `json.Number` or `int64`).
   to an `Execute*`/`client.ExecuteWorkflow` call; an activity that is registered
   but never executed in the analyzed code is not reached.
 
+### `nonserializable`
+
+#### The problem
+
+Temporal serializes activity and workflow arguments and results through its
+`DataConverter`, whose default is JSON. Some Go types can't make that trip at all:
+
+- A `chan` or `func` value has **no JSON representation** — `encoding/json` returns
+  an "unsupported type" error for both — so a parameter or result of that type can
+  never be encoded.
+- A struct that has fields but **no exported** ones encodes to `{}`: JSON marshals
+  only exported fields, so all of its data is silently dropped on the wire.
+
+```go
+// chan parameter: the worker can never decode an argument into it.
+func Stream(ctx context.Context, out chan int) error { /* ... */ }
+workflow.ExecuteActivity(ctx, Stream, make(chan int)) // fails to serialize at run time
+```
+
+This is the sibling of [`lossynumber`](#lossynumber): same target-resolution
+machinery and the same top-level type predicate, but where `lossynumber` flags
+types that decode *lossily*, `nonserializable` flags types that **can't encode at
+all**.
+
+#### What it checks
+
+`nonserializable` resolves the function referenced by each `workflow.ExecuteActivity`,
+`workflow.ExecuteLocalActivity`, `workflow.ExecuteChildWorkflow`,
+`workflow.NewContinueAsNewError`, `client.ExecuteWorkflow` and
+`client.SignalWithStartWorkflow` call to its real signature, then flags any
+**top-level** parameter or **non-error return** whose type can't be serialized. The
+framework-injected leading context (`context.Context` for activities,
+`workflow.Context` for workflows) and a trailing `error` are skipped.
+
+Two checks, with different defaults:
+
+- **`chan` / `func`** — **on by default**. These can never serialize, so a
+  parameter or result of that type is always a bug; there is nothing to opt into.
+  A named channel/function type (`type Stopper chan struct{}`) counts, and a
+  variadic `...chan T` is checked as `chan T` (the type of each actual argument).
+  Diagnostics are tagged `(unencodable)`.
+- **Struct with no exported fields** — **opt-in** via `empty-struct`. Such a struct
+  encodes to `{}` and silently drops its data, **unless** it implements
+  `json.Marshaler` and so controls its own encoding (`json.RawMessage`, `time.Time`,
+  and the like), which is excluded. A fieldless `struct{}` carries no data and
+  round-trips fine, so it is **not** flagged. Diagnostics are tagged `(empty-struct)`.
+
+The check is pure AST + types and deliberately shallow to stay false-positive-free:
+a struct that merely **contains** a `chan`/`func` field, or a `[]chan`, is **not**
+flagged — only the top-level parameter/return type is examined.
+
+##### Example diagnostics
+
+```
+workflow.go:21  activity "Stream" parameter 1 has type chan int; Temporal's DataConverter cannot serialize a channel or function — use a serializable type (unencodable)
+```
+
+The message names the **target** and the offending parameter/return and ends with
+the source `(unencodable)` or `(empty-struct)` (golangci-lint then appends the linter
+name, `(nonserializable)`, after that).
+
+#### Settings
+
+| Key            | Type | Default | Description                                                                                  |
+|----------------|------|---------|----------------------------------------------------------------------------------------------|
+| `disabled`     | bool | `false` | Turn the `nonserializable` analyzer off entirely                                              |
+| `empty-struct` | bool | `false` | Also flag a struct with fields but none exported (and not implementing `json.Marshaler`)      |
+
+Disable it only for the rare case of a custom `DataConverter` that can encode these
+types.
+
+#### Limitations
+
+- **Top-level only.** A `chan`/`func` nested inside a struct field, or below the
+  first level of a `map`/slice (e.g. `[]chan int`), is not flagged — that would risk
+  false positives on shapes that aren't actually serialized as data.
+- **Resolvable targets only.** A target registered and executed by its string name
+  has no static signature, so it is skipped (the [`stringtarget`](#stringtarget)
+  analyzer addresses string targets directly).
+- **Execution sites.** The signature is inspected wherever the function is passed
+  to an `Execute*`/`client.ExecuteWorkflow` call; an activity that is registered
+  but never executed in the analyzed code is not reached.
+
 ### `continueasnew`
 
 #### The problem
@@ -750,6 +833,14 @@ temporalcheck-lint/
 │   │   ├── nolint.go             # //nolint directive suppression
 │   │   ├── lossynumber_test.go   # analysistest
 │   │   ├── lossynumber_internal_test.go
+│   │   ├── nolint_internal_test.go
+│   │   └── testdata/             # self-contained fixture module
+│   ├── nonserializable/          # flag chan/func (and opt-in empty-struct) activity/workflow params/returns
+│   │   ├── nonserializable.go    # settings, analyzer, call dispatch
+│   │   ├── check.go              # signature inspection + non-serializable predicates
+│   │   ├── nolint.go             # //nolint directive suppression
+│   │   ├── nonserializable_test.go # analysistest
+│   │   ├── nonserializable_internal_test.go
 │   │   ├── nolint_internal_test.go
 │   │   └── testdata/             # self-contained fixture module
 │   └── continueasnew/            # flag discarded (not-returned) NewContinueAsNewError results

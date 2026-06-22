@@ -13,8 +13,8 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
-// execargs/stringtarget/lossynumber read each workflow.* target+args call as
-// (ctx, target, args...). These assignments stop compiling if the real SDK changes
+// execargs/stringtarget/lossynumber/nonserializable read each workflow.* target+args
+// call as (ctx, target, args...). These assignments stop compiling if the real SDK changes
 // that shape; keep them in sync with the stub at testdata/temporalsdk.
 var (
 	_ func(workflow.Context, interface{}, ...interface{}) workflow.Future              = workflow.ExecuteActivity
@@ -66,7 +66,7 @@ var (
 	_ func(converter.EncodedValue, interface{}) error                         = converter.EncodedValue.Get
 )
 
-// execargs/stringtarget/lossynumber resolve the workflow target of the
+// execargs/stringtarget/lossynumber/nonserializable resolve the workflow target of the
 // client.Client entry points: ExecuteWorkflow read as (ctx, options, target,
 // args...) and SignalWithStartWorkflow read as (ctx, id, signalName, signalArg,
 // options, target, args...). These method expressions stop compiling if the real

@@ -67,6 +67,15 @@ linters:
             # precision. On by default; set true to turn it off (e.g. for a custom
             # converter that preserves integer precision).
             disabled: false
+          nonserializable:
+            # Flag chan and func types as a top-level activity/workflow parameter or
+            # return type: Temporal's DataConverter cannot serialize them, so the call
+            # fails at run time. On by default; set true to turn it off.
+            disabled: false
+            # Opt in to also flagging a struct that has fields but none exported (and
+            # does not implement json.Marshaler), which JSON encodes to {} and so
+            # silently drops its data (default false).
+            empty-struct: true
           continueasnew:
             # Flag a workflow.NewContinueAsNewError result that is discarded (a bare
             # statement or `_ =`) instead of returned, so the workflow silently ends

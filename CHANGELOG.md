@@ -105,6 +105,28 @@ Initial proof of concept.
   types, so it runs by default; diagnostics are tagged `(lossy-types)`. Turn it
   off via the `lossynumber.disabled` setting (e.g. for a custom converter that
   preserves integer precision).
+- `nonserializable` analyzer: flags types appearing as a top-level **parameter or
+  return type** of an activity or workflow that Temporal's `DataConverter` cannot
+  serialize. Sibling of `lossynumber` — same target resolution
+  (`workflow.ExecuteActivity`/`ExecuteLocalActivity`/`ExecuteChildWorkflow`/
+  `NewContinueAsNewError` and `client.ExecuteWorkflow`/`SignalWithStartWorkflow`) and
+  the same shallow, top-level type predicate, but for types that *can't encode at
+  all* rather than ones that decode lossily. Two checks:
+  - **`chan` / `func`** (on by default): `encoding/json` returns an "unsupported
+    type" error for both, so such a parameter or result can never round-trip — always
+    a bug, nothing to opt into. A named channel/function type counts; a variadic
+    `...chan T` is checked as `chan T`. Diagnostics are tagged `(unencodable)`.
+  - **Struct with no exported fields** (opt-in via `empty-struct`): JSON marshals
+    only exported fields, so such a struct encodes to `{}` and its data is silently
+    dropped. A type implementing `json.Marshaler` controls its own encoding and is
+    excluded; a fieldless `struct{}` carries no data and is not flagged. Diagnostics
+    are tagged `(empty-struct)`. Opt-in because the `json.Marshaler` exclusion makes
+    it less clear-cut than the always-on `chan`/`func` check.
+
+  Deliberately shallow — a struct that merely contains a `chan` field, or a
+  `[]chan`, is not flagged — so it stays false-positive-free; string-registered
+  targets are skipped. Turn the analyzer off entirely via the
+  `nonserializable.disabled` setting.
 - `continueasnew` analyzer (on by default): flags a
   `workflow.NewContinueAsNewError` result that is **discarded** — used as a bare
   expression statement or assigned to `_` — instead of being returned. Returning
