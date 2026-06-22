@@ -105,6 +105,16 @@ Initial proof of concept.
   types, so it runs by default; diagnostics are tagged `(lossy-types)`. Turn it
   off via the `lossynumber.disabled` setting (e.g. for a custom converter that
   preserves integer precision).
+- `continueasnew` analyzer (on by default): flags a
+  `workflow.NewContinueAsNewError` result that is **discarded** — used as a bare
+  expression statement or assigned to `_` — instead of being returned. Returning
+  that error is the only thing that makes a workflow continue as new; a dropped
+  result means the workflow silently ends instead. Pure AST + types and near-zero
+  false positives, so it runs by default (errcheck-style); diagnostics are tagged
+  `(continue-as-new)`. Only the unambiguous discards are flagged — a result
+  assigned to a named variable is left alone, since a `return err` may follow and
+  proving otherwise would need data-flow analysis. Turn it off via the
+  `continueasnew.disabled` setting.
 - Hermetic, offline `analysistest` fixtures: `testdata/` is a self-contained
   module that resolves `go.temporal.io/sdk` via a local stub, so it resolves in
   IDEs without pulling the real SDK.

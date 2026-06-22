@@ -598,6 +598,71 @@ integer precision (e.g. one that decodes numbers into `json.Number` or `int64`).
   to an `Execute*`/`client.ExecuteWorkflow` call; an activity that is registered
   but never executed in the analyzed code is not reached.
 
+### `continueasnew`
+
+#### The problem
+
+A workflow continues as new by **returning** the error built by
+`workflow.NewContinueAsNewError`:
+
+```go
+func NewContinueAsNewError(ctx workflow.Context, wfn interface{}, args ...interface{}) error
+```
+
+The returned error *is* the signal: returning it ends the current run and starts
+a fresh one with the given arguments. Constructing it without returning it drops
+the signal silently — the workflow falls through and just **ends** instead of
+continuing:
+
+```go
+if shouldContinue {
+	workflow.NewContinueAsNewError(ctx, MyWorkflow, next) // built, never returned
+}
+return nil // workflow ends here — the continue-as-new never happens
+```
+
+#### What it checks
+
+`continueasnew` flags a `workflow.NewContinueAsNewError` call whose result is
+**discarded** — used as a bare expression statement, or assigned to `_`. The fix
+is to return it:
+
+```go
+if shouldContinue {
+	return workflow.NewContinueAsNewError(ctx, MyWorkflow, next) // correct — never flagged
+}
+```
+
+The check is **on by default**. It is pure AST + types with near-zero false
+positives: returning the error is the only way the call has any effect, so a
+discarded result is always a bug — there is nothing to opt into, only a
+`disabled` switch.
+
+##### Example diagnostics
+
+```
+workflow.go:14  NewContinueAsNewError: the continue-as-new error is discarded; return it so the workflow continues as new, otherwise the workflow silently ends instead (continue-as-new)
+```
+
+The message ends with the source `(continue-as-new)` (golangci-lint then appends
+the linter name, `(continueasnew)`, after that).
+
+#### Settings
+
+| Key        | Type | Default | Description                                       |
+|------------|------|---------|---------------------------------------------------|
+| `disabled` | bool | `false` | Turn the `continueasnew` analyzer off entirely     |
+
+#### Limitations
+
+- **Syntactic discard only.** Only a bare statement and `_ =` are flagged. A
+  result assigned to a real variable (`err := workflow.NewContinueAsNewError(…)`)
+  is **not** flagged — a `return err` may follow, and proving it never does needs
+  data-flow analysis that would risk false positives.
+- **Constructed-and-returned shapes only.** The analyzer reasons about the
+  `NewContinueAsNewError` call site itself; it does not track a continue-as-new
+  error passed into a helper and returned from there.
+
 ## Development
 
 ```bash
@@ -679,12 +744,20 @@ temporalcheck-lint/
 │   │   ├── futureget_internal_test.go
 │   │   ├── nolint_internal_test.go
 │   │   └── testdata/             # self-contained fixture module
-│   └── lossynumber/              # flag dynamic-typed (any) activity/workflow params/returns
-│       ├── lossynumber.go        # settings, analyzer, call dispatch
-│       ├── check.go              # signature inspection + lossy-type predicate
+│   ├── lossynumber/              # flag dynamic-typed (any) activity/workflow params/returns
+│   │   ├── lossynumber.go        # settings, analyzer, call dispatch
+│   │   ├── check.go              # signature inspection + lossy-type predicate
+│   │   ├── nolint.go             # //nolint directive suppression
+│   │   ├── lossynumber_test.go   # analysistest
+│   │   ├── lossynumber_internal_test.go
+│   │   ├── nolint_internal_test.go
+│   │   └── testdata/             # self-contained fixture module
+│   └── continueasnew/            # flag discarded (not-returned) NewContinueAsNewError results
+│       ├── continueasnew.go      # settings, analyzer, discard dispatch
+│       ├── check.go              # NewContinueAsNewError call matching
 │       ├── nolint.go             # //nolint directive suppression
-│       ├── lossynumber_test.go   # analysistest
-│       ├── lossynumber_internal_test.go
+│       ├── continueasnew_test.go # analysistest
+│       ├── continueasnew_internal_test.go
 │       ├── nolint_internal_test.go
 │       └── testdata/             # self-contained fixture module
 ├── conformance/                  # CI-only module: real-SDK contract test (see below)

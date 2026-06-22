@@ -8,6 +8,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/activitytimeout"
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/continueasnew"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/execargs"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/futureget"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/lossynumber"
@@ -29,6 +30,7 @@ type Settings struct {
 	ActivityTimeout ActivityTimeoutSettings `json:"activitytimeout"`
 	FutureGet       FutureGetSettings       `json:"futureget"`
 	LossyNumber     LossyNumberSettings     `json:"lossynumber"`
+	ContinueAsNew   ContinueAsNewSettings   `json:"continueasnew"`
 }
 
 // ExecargsSettings configures the execargs analyzer. Pointers distinguish
@@ -124,6 +126,18 @@ type LossyNumberSettings struct {
 	Disabled *bool `json:"disabled"`
 }
 
+// ContinueAsNewSettings configures the continueasnew analyzer, which flags a
+// workflow.NewContinueAsNewError result that is discarded (a bare statement or
+// `_ =`) rather than returned, so the workflow silently ends instead of
+// continuing as new.
+type ContinueAsNewSettings struct {
+	// Disabled turns the analyzer off entirely (default false). The check is on by
+	// default: discarding a continue-as-new error aborts the continue-as-new and
+	// ends the workflow instead, which is always a bug, so there is nothing to opt
+	// into.
+	Disabled *bool `json:"disabled"`
+}
+
 type plugin struct {
 	settings Settings
 }
@@ -183,6 +197,10 @@ func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 	if p.settings.LossyNumber.Disabled != nil {
 		lossyNumberDisabled = *p.settings.LossyNumber.Disabled
 	}
+	continueAsNewDisabled := false
+	if p.settings.ContinueAsNew.Disabled != nil {
+		continueAsNewDisabled = *p.settings.ContinueAsNew.Disabled
+	}
 	return []*analysis.Analyzer{
 		execargs.NewAnalyzer(execargs.Settings{
 			Disabled:       disabled,
@@ -206,6 +224,9 @@ func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 		}),
 		lossynumber.NewAnalyzer(lossynumber.Settings{
 			Disabled: lossyNumberDisabled,
+		}),
+		continueasnew.NewAnalyzer(continueasnew.Settings{
+			Disabled: continueAsNewDisabled,
 		}),
 		// Future Temporal analyzers (e.g. registration coverage, retry-policy
 		// sanity, non-determinism heuristics) plug in here.
