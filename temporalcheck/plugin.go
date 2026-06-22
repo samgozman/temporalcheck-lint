@@ -13,6 +13,7 @@ import (
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/futureget"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/lossynumber"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/nonserializable"
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/optionscontext"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/optionsdiscard"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/sensitiveargs"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/stringtarget"
@@ -35,6 +36,7 @@ type Settings struct {
 	NonSerializable NonSerializableSettings `json:"nonserializable"`
 	ContinueAsNew   ContinueAsNewSettings   `json:"continueasnew"`
 	SensitiveArgs   SensitiveArgsSettings   `json:"sensitiveargs"`
+	OptionsContext  OptionsContextSettings  `json:"optionscontext"`
 }
 
 // ExecargsSettings configures the execargs analyzer. Pointers distinguish
@@ -177,6 +179,17 @@ type SensitiveArgsSettings struct {
 	Pattern *string `json:"pattern"`
 }
 
+// OptionsContextSettings configures the optionscontext analyzer, which flags a
+// workflow.Execute{Activity,LocalActivity,ChildWorkflow} call whose context was
+// configured with a conflicting With*Options helper in the same function, so the
+// options it reads never apply.
+type OptionsContextSettings struct {
+	// Disabled turns the analyzer off entirely (default false). The check is on by
+	// default: it fires only on a seen options/call-kind contradiction, never on
+	// absence, so there is nothing to opt into.
+	Disabled *bool `json:"disabled"`
+}
+
 type plugin struct {
 	settings Settings
 }
@@ -256,6 +269,10 @@ func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 	if p.settings.SensitiveArgs.Pattern != nil {
 		sensitiveArgsPattern = *p.settings.SensitiveArgs.Pattern
 	}
+	optionsContextDisabled := false
+	if p.settings.OptionsContext.Disabled != nil {
+		optionsContextDisabled = *p.settings.OptionsContext.Disabled
+	}
 	return []*analysis.Analyzer{
 		execargs.NewAnalyzer(execargs.Settings{
 			Disabled:       disabled,
@@ -290,6 +307,9 @@ func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 		sensitiveargs.NewAnalyzer(sensitiveargs.Settings{
 			Enabled: sensitiveArgsEnabled,
 			Pattern: sensitiveArgsPattern,
+		}),
+		optionscontext.NewAnalyzer(optionscontext.Settings{
+			Disabled: optionsContextDisabled,
 		}),
 		// Future Temporal analyzers (e.g. registration coverage, retry-policy
 		// sanity, non-determinism heuristics) plug in here.

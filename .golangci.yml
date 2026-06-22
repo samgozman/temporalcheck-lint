@@ -91,3 +91,10 @@ linters:
             # Regexp matched (unanchored) against parameter and exported-field names.
             # Omit to use the default: (?i)cvv|pan|card.?number|password|secret|ssn|token
             pattern: "(?i)cvv|pan|card.?number|password|secret|ssn|token"
+          optionscontext:
+            # Flag a workflow.Execute{Activity,LocalActivity,ChildWorkflow} call whose
+            # context was configured with a conflicting With*Options helper in the same
+            # function (e.g. WithChildOptions then ExecuteActivity), so the options it
+            # reads never apply. Fires only on a seen contradiction, never on absence,
+            # so it is on by default; set true to turn it off.
+            disabled: false

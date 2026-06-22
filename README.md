@@ -819,6 +819,76 @@ ends with the source `(sensitive)` (golangci-lint then appends the linter name,
 - **Resolvable targets only.** Like the other analyzers it skips a target named by
   a registered string, which can't be resolved to a signature.
 
+### `optionscontext`
+
+#### The problem
+
+Activities, local activities and child workflows each read their options from the
+workflow context under a **different key**. `workflow.WithActivityOptions`,
+`WithLocalActivityOptions` and `WithChildOptions` each return a context carrying the
+corresponding options; `ExecuteActivity`, `ExecuteLocalActivity` and
+`ExecuteChildWorkflow` each read the matching one back out. Crossing the wires
+compiles cleanly but blows up at run time:
+
+```go
+ctx = workflow.WithChildOptions(ctx, cwo)
+workflow.ExecuteActivity(ctx, a.Greet) // child options, activity call — boom
+```
+
+The activity options were never applied, so the activity fails at run time with a
+missing-timeout error.
+
+#### What it checks
+
+Asking "does this `ctx` have the *right* options?" needs full dataflow and
+cross-function visibility — which is where false positives come from. `optionscontext`
+asks the narrower, decidable question instead: "does this `ctx` carry a *conflicting*
+options helper, applied in this same function, with no matching one in sight?"
+
+It is **intra-procedural** and AST + types only. It tracks, for each context
+variable, the set of option kinds applied to it through its visible derivation
+chain, and at each `Execute*` call it fires **only on a seen contradiction**: the
+context carries a conflicting helper and the matching one was never applied. It
+never fires on absence, so it stays near-zero-false-positive and is **on by
+default**.
+
+The discipline that keeps it clean is aggressive skipping. It bails to "unknown"
+(reports nothing) the moment it loses sight of the full story:
+
+- the `ctx` is a bare function parameter (the caller may have configured it);
+- it is reassigned from a non-`With*` helper returning a `Context` (opaque);
+- it is captured in a closure or `workflow.Go`;
+- it is assigned in different branches with different kinds.
+
+Applying the matching helper anywhere in the chain — even alongside a conflicting
+one — clears the conflict, since each helper sets a distinct key.
+
+##### Example diagnostics
+
+```
+workflow.go:14  ExecuteActivity: this ctx is configured with WithChildOptions, not WithActivityOptions, so the activity options never apply; derive it with ctx = workflow.WithActivityOptions(ctx, opts) (options-context)
+```
+
+The message names the **entry point**, the conflicting helper, the helper that
+should have been used, and ends with the source `(options-context)` (golangci-lint
+then appends the linter name, `(optionscontext)`, after that).
+
+#### Settings
+
+| Key        | Type | Default | Description                                  |
+|------------|------|---------|----------------------------------------------|
+| `disabled` | bool | `false` | Turn the `optionscontext` analyzer off entirely |
+
+#### Limitations
+
+- **Intra-procedural.** It only sees the derivation chain within a single function
+  body; a context configured in a helper function and passed in is treated as
+  unknown.
+- **Seen contradictions only.** It reports a context carrying the *wrong* helper, not
+  one *missing* the right helper — absence is never flagged, by design.
+- **Plain variables only.** A context held in a struct field or returned from a call
+  is not a tracked variable, so it is skipped.
+
 ## Development
 
 ```bash
@@ -924,13 +994,20 @@ temporalcheck-lint/
 │   │   ├── continueasnew_internal_test.go
 │   │   ├── nolint_internal_test.go
 │   │   └── testdata/             # self-contained fixture module
-│   └── sensitiveargs/            # opt-in: flag sensitively-named params/struct fields
-│       ├── sensitiveargs.go      # settings, analyzer, call dispatch
-│       ├── check.go              # signature/struct-field name matching
+│   ├── sensitiveargs/            # opt-in: flag sensitively-named params/struct fields
+│   │   ├── sensitiveargs.go      # settings, analyzer, call dispatch
+│   │   ├── check.go              # signature/struct-field name matching
+│   │   ├── nolint.go             # //nolint directive suppression
+│   │   ├── sensitiveargs_test.go # analysistest
+│   │   ├── sensitiveargs_internal_test.go
+│   │   ├── nolint_internal_test.go
+│   │   └── testdata/             # self-contained fixture module
+│   └── optionscontext/           # flag Execute* calls fed a conflicting With*Options context
+│       ├── optionscontext.go     # settings, analyzer, statement-flow walk
+│       ├── check.go              # With*/Execute* matching + conflict report
 │       ├── nolint.go             # //nolint directive suppression
-│       ├── sensitiveargs_test.go # analysistest
-│       ├── sensitiveargs_internal_test.go
-│       ├── nolint_internal_test.go
+│       ├── optionscontext_test.go # analysistest
+│       ├── optionscontext_internal_test.go
 │       └── testdata/             # self-contained fixture module
 ├── conformance/                  # CI-only module: real-SDK contract test (see below)
 ├── .custom-gcl.yml               # custom golangci-lint build config

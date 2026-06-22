@@ -151,6 +151,21 @@ Initial proof of concept.
   considered (unexported fields are never serialized); it checks parameters, not
   return values, and skips string-registered targets. Diagnostics are tagged
   `(sensitive)`.
+- `optionscontext` analyzer (on by default): flags a `workflow.ExecuteActivity` /
+  `ExecuteLocalActivity` / `ExecuteChildWorkflow` call whose context was configured
+  with the **wrong** options helper in the same function — e.g. `ctx =
+  workflow.WithChildOptions(ctx, cwo)` followed by `workflow.ExecuteActivity(ctx,
+  …)`, which compiles but applies child-workflow options to an activity call. The
+  three helpers (`WithActivityOptions` / `WithLocalActivityOptions` /
+  `WithChildOptions`) each write a distinct context key that the matching `Execute*`
+  reads back, so crossing them means the options silently never apply. Intra-procedural
+  and AST + types only: it tracks the option kinds applied to each context variable
+  along its visible derivation chain and fires only on a **seen contradiction** — a
+  conflicting helper with no matching one in sight — never on absence. It bails to
+  "unknown" (reports nothing) whenever it loses sight of the full story: a bare
+  function parameter, an opaque reassignment, a closure capture, or a branch-dependent
+  value. Diagnostics are tagged `(options-context)`. Turn it off via the
+  `optionscontext.disabled` setting.
 - Hermetic, offline `analysistest` fixtures: `testdata/` is a self-contained
   module that resolves `go.temporal.io/sdk` via a local stub, so it resolves in
   IDEs without pulling the real SDK.
