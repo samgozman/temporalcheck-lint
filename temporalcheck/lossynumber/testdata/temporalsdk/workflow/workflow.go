@@ -24,3 +24,7 @@ func ExecuteLocalActivity(ctx Context, activity any, args ...any) Future { retur
 func ExecuteChildWorkflow(ctx Context, childWorkflow any, args ...any) ChildWorkflowFuture {
 	return nil
 }
+
+// NewContinueAsNewError mirrors the SDK: the workflow target is interface{} and
+// its arguments are variadic interface{}, the same type erasure as Execute*.
+func NewContinueAsNewError(ctx Context, wfn any, args ...any) error { return nil }

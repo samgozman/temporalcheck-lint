@@ -24,3 +24,7 @@ func ExecuteLocalActivity(ctx Context, activity any, args ...any) Future { retur
 func ExecuteChildWorkflow(ctx Context, childWorkflow any, args ...any) ChildWorkflowFuture {
 	return nil
 }
+
+// NewContinueAsNewError mirrors the SDK: the workflow target is interface{}, so a
+// bare string can stand in for it the same way it can for an Execute* target.
+func NewContinueAsNewError(ctx Context, wfn any, args ...any) error { return nil }

@@ -39,25 +39,36 @@ type entry struct {
 }
 
 // workflowEntries are the workflow.* package functions this analyzer understands.
-// The target is always the second argument: ExecuteActivity(ctx, target, args...).
+// Each names its target as the second argument: ExecuteActivity(ctx, target,
+// args...) / NewContinueAsNewError(ctx, target, args...).
 var workflowEntries = map[string]entry{
-	"ExecuteActivity":      {noun: "activity", isWorkflow: false, targetIdx: 1},
-	"ExecuteLocalActivity": {noun: "activity", isWorkflow: false, targetIdx: 1},
-	"ExecuteChildWorkflow": {noun: "child workflow", isWorkflow: true, targetIdx: 1},
+	"ExecuteActivity":       {noun: "activity", isWorkflow: false, targetIdx: 1},
+	"ExecuteLocalActivity":  {noun: "activity", isWorkflow: false, targetIdx: 1},
+	"ExecuteChildWorkflow":  {noun: "child workflow", isWorkflow: true, targetIdx: 1},
+	"NewContinueAsNewError": {noun: "workflow", isWorkflow: true, targetIdx: 1},
 }
 
-// entryFor reports whether fn is an Execute* entry point this analyzer inspects.
-// workflow.Execute* are package functions; client.ExecuteWorkflow is a method on
-// the client.Client interface, so we match it by name and receiver rather than by
-// package path. Its target is the third argument: ExecuteWorkflow(ctx, options,
-// target, args...).
+// clientEntries are the client.Client methods this analyzer understands, keyed by
+// method name. The target index differs per method: ExecuteWorkflow(ctx, options,
+// target, args...) names it third; SignalWithStartWorkflow(ctx, id, signalName,
+// signalArg, options, target, args...) names it sixth.
+var clientEntries = map[string]entry{
+	"ExecuteWorkflow":         {noun: "workflow", isWorkflow: true, targetIdx: 2},
+	"SignalWithStartWorkflow": {noun: "workflow", isWorkflow: true, targetIdx: 5},
+}
+
+// entryFor reports whether fn is an Execute*/continue-as-new entry point this
+// analyzer inspects. workflow.* are package functions; the client methods are on
+// the client.Client interface, so we match them by name and receiver rather than
+// by package path.
 func entryFor(fn *types.Func) (entry, bool) {
 	if fn.Pkg().Path() == workflowPkg {
 		e, ok := workflowEntries[fn.Name()]
 		return e, ok
 	}
-	if fn.Name() == "ExecuteWorkflow" && (isReceiver(fn, clientPkg, "Client") || isReceiver(fn, internalPkg, "Client")) {
-		return entry{noun: "workflow", isWorkflow: true, targetIdx: 2}, true
+	if e, ok := clientEntries[fn.Name()]; ok &&
+		(isReceiver(fn, clientPkg, "Client") || isReceiver(fn, internalPkg, "Client")) {
+		return e, true
 	}
 	return entry{}, false
 }

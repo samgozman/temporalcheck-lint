@@ -28,9 +28,14 @@ import (
 
 const (
 	workflowPkg = "go.temporal.io/sdk/workflow"
+	// clientPkg is where the SDK declares the Client interface directly (unlike the
+	// aliased testsuite type), so client.ExecuteWorkflow / SignalWithStartWorkflow
+	// resolve with receiver client.Client.
+	clientPkg = "go.temporal.io/sdk/client"
 	// workflowInternalPkg is where the SDK declares the testsuite types. The
 	// testsuite package re-publishes TestWorkflowEnvironment as an alias, so a
-	// resolved OnActivity/OnWorkflow method's receiver lives here.
+	// resolved OnActivity/OnWorkflow method's receiver lives here. internalPkg.Client
+	// is a separate interface client.Client implements; we accept it too, defensively.
 	workflowInternalPkg = "go.temporal.io/sdk/internal"
 	testEnvType         = "TestWorkflowEnvironment"
 	// tagStringTarget suffixes the production-call diagnostic so it is clear which
@@ -41,13 +46,23 @@ const (
 	tagStrictTests = "strict-tests"
 )
 
-// entryPoints are the workflow.* functions whose target argument this analyzer
-// inspects. The set matches execargs: a string target is equally unresolvable
-// for any of them.
-var entryPoints = map[string]bool{
-	"ExecuteActivity":      true,
-	"ExecuteLocalActivity": true,
-	"ExecuteChildWorkflow": true,
+// workflowEntries are the workflow.* functions whose target argument this
+// analyzer inspects, mapped to that argument's index. A string target is equally
+// unresolvable for any of them. The set matches execargs.
+var workflowEntries = map[string]int{
+	"ExecuteActivity":       1,
+	"ExecuteLocalActivity":  1,
+	"ExecuteChildWorkflow":  1,
+	"NewContinueAsNewError": 1,
+}
+
+// clientEntries are the client.Client methods whose workflow target this analyzer
+// inspects, mapped to that target's argument index. ExecuteWorkflow(ctx, options,
+// target, args...) names it third; SignalWithStartWorkflow(ctx, id, signalName,
+// signalArg, options, target, args...) names it sixth.
+var clientEntries = map[string]int{
+	"ExecuteWorkflow":         2,
+	"SignalWithStartWorkflow": 5,
 }
 
 // testEntryPoints are the TestWorkflowEnvironment mock-setup methods whose target
@@ -79,7 +94,7 @@ func NewAnalyzer(settings Settings) *analysis.Analyzer {
 	c := &checker{enabled: settings.Enabled, strictTests: settings.StrictTests}
 	return &analysis.Analyzer{
 		Name: "stringtarget",
-		Doc:  "flag Temporal ExecuteActivity/ExecuteLocalActivity/ExecuteChildWorkflow calls that name the target by its registered string instead of passing the function reference",
+		Doc:  "flag Temporal ExecuteActivity/ExecuteLocalActivity/ExecuteChildWorkflow/NewContinueAsNewError and client ExecuteWorkflow/SignalWithStartWorkflow calls that name the target by its registered string instead of passing the function reference",
 		URL:  "https://github.com/samgozman/temporalcheck-lint",
 		Run:  c.run,
 	}
@@ -125,18 +140,35 @@ func (c *checker) checkCall(pass *analysis.Pass, nolint nolintInfo, call *ast.Ca
 	}
 	// run() already gated on Enabled, so the production check below is always
 	// active here; StrictTests is the opt-in layer for test mocks on top of it.
-	switch fn.Pkg().Path() {
-	case workflowPkg:
-		// Shape is (ctx, target, args...): the target is the second argument.
-		if entryPoints[fn.Name()] {
-			c.report(pass, nolint, call, fn.Name(), call.Args[1], tagStringTarget)
+	if idx, ok := targetIndex(fn); ok {
+		// A compiling call always has the target present, but guard the index so a
+		// malformed/partial AST can't panic.
+		if idx < len(call.Args) {
+			c.report(pass, nolint, call, fn.Name(), call.Args[idx], tagStringTarget)
 		}
-	case workflowInternalPkg:
-		// Shape is (target, matchers...): the target is the first argument.
-		if c.strictTests && testEntryPoints[fn.Name()] && isReceiver(fn, workflowInternalPkg, testEnvType) {
-			c.report(pass, nolint, call, fn.Name(), call.Args[0], tagStrictTests)
-		}
+		return
 	}
+	// Shape is (target, matchers...): the test-mock target is the first argument.
+	if c.strictTests && testEntryPoints[fn.Name()] && isReceiver(fn, workflowInternalPkg, testEnvType) {
+		c.report(pass, nolint, call, fn.Name(), call.Args[0], tagStrictTests)
+	}
+}
+
+// targetIndex reports the argument index of the workflow/activity target for fn,
+// if fn is an entry point this analyzer inspects. workflow.* are package
+// functions; the client methods are matched by name and receiver, since the SDK
+// declares them on the client.Client interface rather than in a package we can
+// match by path.
+func targetIndex(fn *types.Func) (int, bool) {
+	if fn.Pkg().Path() == workflowPkg {
+		idx, ok := workflowEntries[fn.Name()]
+		return idx, ok
+	}
+	if idx, ok := clientEntries[fn.Name()]; ok &&
+		(isReceiver(fn, clientPkg, "Client") || isReceiver(fn, workflowInternalPkg, "Client")) {
+		return idx, true
+	}
+	return 0, false
 }
 
 // report flags target when it is named by string, after honoring //nolint. The

@@ -24,6 +24,7 @@ func Workflow(ctx workflow.Context) error {
 	_ = workflow.ExecuteActivity(ctx, "Greet", "world")      // want `ExecuteActivity: target "Greet" is named by string; pass the function reference instead so its arguments can be checked statically \(string-target\)`
 	_ = workflow.ExecuteLocalActivity(ctx, "Greet", "world") // want `ExecuteLocalActivity: target "Greet" is named by string; pass the function reference instead so its arguments can be checked statically \(string-target\)`
 	_ = workflow.ExecuteChildWorkflow(ctx, "Child", 1)       // want `ExecuteChildWorkflow: target "Child" is named by string; pass the function reference instead so its arguments can be checked statically \(string-target\)`
+	_ = workflow.NewContinueAsNewError(ctx, "Self", 1)       // want `NewContinueAsNewError: target "Self" is named by string; pass the function reference instead so its arguments can be checked statically \(string-target\)`
 
 	// A string held in a variable: still named by string, but no literal to quote.
 	name := "Greet"

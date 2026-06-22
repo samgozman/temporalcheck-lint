@@ -17,4 +17,9 @@ func start(ctx context.Context, c client.Client) {
 	c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{}, myWorkflow, 1)     // want `workflow "myWorkflow" parameter 1 has dynamic type any;.*\(lossy-types\)`
 	c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{}, goodWorkflow, 1)   // concrete int64 parameter: no diagnostic
 	c.ExecuteWorkflow(ctx, client.StartWorkflowOptions{}, anyReturnWorkflow) // want `workflow "anyReturnWorkflow" return 1 has dynamic type map\[string\]any;.*\(lossy-types\)`
+
+	// SignalWithStartWorkflow names its workflow target as the 6th argument (after
+	// the signal fields and options), so the analyzer must resolve it by index.
+	c.SignalWithStartWorkflow(ctx, "wf-id", "sig", nil, client.StartWorkflowOptions{}, myWorkflow, 1)   // want `workflow "myWorkflow" parameter 1 has dynamic type any;.*\(lossy-types\)`
+	c.SignalWithStartWorkflow(ctx, "wf-id", "sig", nil, client.StartWorkflowOptions{}, goodWorkflow, 1) // concrete int64 parameter: no diagnostic
 }

@@ -10,8 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Initial proof of concept.
 
 - `execargs` analyzer: checks that the arguments passed to
-  `workflow.ExecuteActivity`, `workflow.ExecuteLocalActivity` and
-  `workflow.ExecuteChildWorkflow` match the target function's real signature.
+  `workflow.ExecuteActivity`, `workflow.ExecuteLocalActivity`,
+  `workflow.ExecuteChildWorkflow`, `workflow.NewContinueAsNewError` and the
+  `client.Client` methods `ExecuteWorkflow` and `SignalWithStartWorkflow` match the
+  target function's real signature. The target's argument index differs per entry
+  point — second for the `workflow.*` calls, third for `ExecuteWorkflow`, sixth for
+  `SignalWithStartWorkflow` — and the client methods are matched by receiver.
   - **Arity** — the number of arguments matches what the target expects, after
     skipping the framework-injected leading parameter (`context.Context` for
     activities, `workflow.Context` for child workflows).
@@ -42,10 +46,11 @@ Initial proof of concept.
     `mock.MatchedBy`) are opaque. Diagnostics are tagged `(strict-tests)`;
     string-named, spread, and variadic targets are skipped.
 - `stringtarget` analyzer (opt-in, off by default): flags
-  `workflow.ExecuteActivity`, `workflow.ExecuteLocalActivity` and
-  `workflow.ExecuteChildWorkflow` calls whose target is named by **string** (a
-  literal, a string variable, or a named string type) instead of a function
-  reference. A string target can't be resolved to a signature, so it escapes
+  `workflow.ExecuteActivity`, `workflow.ExecuteLocalActivity`,
+  `workflow.ExecuteChildWorkflow`, `workflow.NewContinueAsNewError` and the
+  `client.Client` methods `ExecuteWorkflow` and `SignalWithStartWorkflow` calls
+  whose target is named by **string** (a literal, a string variable, or a named
+  string type) instead of a function reference. A string target can't be resolved to a signature, so it escapes
   `execargs`; this check surfaces those call sites so they can be refactored to a
   function reference that `execargs` *can* verify. Diagnostics are tagged
   `(string-target)`; enable via the `stringtarget.enabled` setting.
@@ -89,8 +94,9 @@ Initial proof of concept.
   and `encoding/json` decodes every number into a `float64` when the destination
   is the empty interface — so an `int64` past 2^53 round-trips with silent
   precision loss. The analyzer resolves the function referenced by each
-  `workflow.ExecuteActivity`/`ExecuteLocalActivity`/`ExecuteChildWorkflow` and
-  `client.ExecuteWorkflow` call to its real signature, skips the injected leading
+  `workflow.ExecuteActivity`/`ExecuteLocalActivity`/`ExecuteChildWorkflow`/
+  `NewContinueAsNewError` and `client.ExecuteWorkflow`/`SignalWithStartWorkflow`
+  call to its real signature, skips the injected leading
   context and the trailing `error`, and reports any remaining parameter or return
   whose type is one of those lossy forms (a named empty interface counts; a
   non-empty interface such as `error` does not). The check is intentionally
@@ -104,6 +110,7 @@ Initial proof of concept.
   IDEs without pulling the real SDK.
 - `conformance/` module: a compile-time contract test that builds against the
   real Temporal SDK in CI, catching any drift between the stub and the SDK's
-  `Execute*`, `client.ExecuteWorkflow`, `testsuite` `OnActivity`/`OnWorkflow`,
+  `Execute*`, `workflow.NewContinueAsNewError`, `client.ExecuteWorkflow`,
+  `client.SignalWithStartWorkflow`, `testsuite` `OnActivity`/`OnWorkflow`,
   `With*Options`, and `Future`/`ChildWorkflowFuture`/`EncodedValue` `.Get`
   signatures.

@@ -27,17 +27,17 @@ const (
 func (c *checker) checkSignature(
 	pass *analysis.Pass,
 	call *ast.CallExpr,
-	entry string,
-	k kind,
+	fnName string,
+	e entry,
 	sig *types.Signature,
 	args []ast.Expr,
 ) {
 	params := sig.Params()
-	skip := skipCount(sig, k)
-	name := targetName(call.Args[1])
+	skip := skipCount(sig, e.kind)
+	name := targetName(call.Args[e.targetIdx])
 
 	if sig.Variadic() {
-		c.checkVariadic(pass, call, entry, k, name, sig, skip, args)
+		c.checkVariadic(pass, call, fnName, e, name, sig, skip, args)
 		return
 	}
 
@@ -46,14 +46,14 @@ func (c *checker) checkSignature(
 	want := params.Len() - skip
 	if len(args) != want {
 		pass.Reportf(call.Lparen, "%s: %s %q expects %d %s, got %d (%s)",
-			entry, noun(k), name, want, argWord(want), len(args), tagArity)
+			fnName, e.noun, name, want, argWord(want), len(args), tagArity)
 		return
 	}
 	if !c.typeChecksEnabled() {
 		return
 	}
 	for i, arg := range args {
-		c.checkAssignable(pass, arg, entry, name, i+1, params.At(skip+i).Type())
+		c.checkAssignable(pass, arg, fnName, name, i+1, params.At(skip+i).Type())
 	}
 }
 
@@ -62,8 +62,8 @@ func (c *checker) checkSignature(
 func (c *checker) checkVariadic(
 	pass *analysis.Pass,
 	call *ast.CallExpr,
-	entry string,
-	k kind,
+	fnName string,
+	e entry,
 	name string,
 	sig *types.Signature,
 	skip int,
@@ -77,23 +77,23 @@ func (c *checker) checkVariadic(
 
 	if len(args) < fixed {
 		pass.Reportf(call.Lparen, "%s: %s %q expects at least %d %s, got %d (%s)",
-			entry, noun(k), name, fixed, argWord(fixed), len(args), tagArity)
+			fnName, e.noun, name, fixed, argWord(fixed), len(args), tagArity)
 		return
 	}
 	if !c.typeChecksEnabled() {
 		return
 	}
 	for i := 0; i < fixed; i++ {
-		c.checkAssignable(pass, args[i], entry, name, i+1, params.At(skip+i).Type())
+		c.checkAssignable(pass, args[i], fnName, name, i+1, params.At(skip+i).Type())
 	}
 	// A variadic parameter's type is always a slice, so this assertion holds.
 	elem := params.At(variadicIdx).Type().(*types.Slice).Elem()
 	for i := fixed; i < len(args); i++ {
-		c.checkAssignable(pass, args[i], entry, name, i+1, elem)
+		c.checkAssignable(pass, args[i], fnName, name, i+1, elem)
 	}
 }
 
-func (c *checker) checkAssignable(pass *analysis.Pass, arg ast.Expr, entry, name string, pos int, want types.Type) {
+func (c *checker) checkAssignable(pass *analysis.Pass, arg ast.Expr, fnName, name string, pos int, want types.Type) {
 	got := pass.TypesInfo.TypeOf(arg)
 	if got == nil || want == nil {
 		return
@@ -107,7 +107,7 @@ func (c *checker) checkAssignable(pass *analysis.Pass, arg ast.Expr, entry, name
 	if pointerInsensitiveMatch(got, want) {
 		if c.strictPointers {
 			c.reportf(pass, arg, "%s: arg %d of %q has type %s, want %s (%s)",
-				entry, pos, name, typeStr(got), typeStr(want), tagStrictPointers)
+				fnName, pos, name, typeStr(got), typeStr(want), tagStrictPointers)
 		}
 		return
 	}
@@ -115,39 +115,39 @@ func (c *checker) checkAssignable(pass *analysis.Pass, arg ast.Expr, entry, name
 	// Two distinct struct types (passed by value or pointer): Temporal serializes
 	// by field name, so they may round-trip. Classify by how their fields line up.
 	if gs, ws := structUnder(got), structUnder(want); gs != nil && ws != nil {
-		c.reportStructMismatch(pass, arg, entry, name, pos, got, want, compareStructs(gs, ws))
+		c.reportStructMismatch(pass, arg, fnName, name, pos, got, want, compareStructs(gs, ws))
 		return
 	}
 
 	// A plain type mismatch (int vs string, struct vs map, ...).
 	if c.strictTypes {
 		c.reportf(pass, arg, "%s: arg %d of %q has type %s, want %s (%s)",
-			entry, pos, name, typeStr(got), typeStr(want), tagStrictTypes)
+			fnName, pos, name, typeStr(got), typeStr(want), tagStrictTypes)
 	}
 }
 
 // reportStructMismatch emits the right diagnostic for passing struct type got
 // where struct type want is expected, given how their fields line up.
-func (c *checker) reportStructMismatch(pass *analysis.Pass, arg ast.Expr, entry, name string, pos int, got, want types.Type, d structDiff) {
+func (c *checker) reportStructMismatch(pass *analysis.Pass, arg ast.Expr, fnName, name string, pos int, got, want types.Type, d structDiff) {
 	switch {
 	case d.conflict != nil:
 		// A shared field has an incompatible type: genuine wire corruption.
 		if c.strictTypes || c.structShape {
 			c.reportf(pass, arg, "%s: arg %d of %q sends %s, target wants %s — field %q is incompatible (%s vs %s) (%s)",
-				entry, pos, name, typeStr(got), typeStr(want), d.conflict.field,
+				fnName, pos, name, typeStr(got), typeStr(want), d.conflict.field,
 				typeStr(d.conflict.got), typeStr(d.conflict.want), tagStrictTypes)
 		}
 	case d.overlap == 0:
 		// Nothing serializes across: almost certainly the wrong type entirely.
 		if c.strictTypes || c.structShape {
 			c.reportf(pass, arg, "%s: arg %d of %q sends %s, target wants %s — no fields in common (%s)",
-				entry, pos, name, typeStr(got), typeStr(want), tagStrictTypes)
+				fnName, pos, name, typeStr(got), typeStr(want), tagStrictTypes)
 		}
 	default:
 		// Wire-compatible but distinct: the dangerous-but-works case.
 		if c.structShape {
 			c.reportf(pass, arg, "%s: arg %d of %q sends %s, target wants %s — %s (%s)",
-				entry, pos, name, typeStr(got), typeStr(want), driftPhrase(d), tagStructShape)
+				fnName, pos, name, typeStr(got), typeStr(want), driftPhrase(d), tagStructShape)
 		}
 	}
 }
@@ -312,7 +312,7 @@ func skipCount(sig *types.Signature, k kind) int {
 	}
 	first := sig.Params().At(0).Type()
 	switch k {
-	case kindChildWorkflow:
+	case kindWorkflow:
 		if isWorkflowContext(first) {
 			return 1
 		}
@@ -336,13 +336,6 @@ func isWorkflowContext(t types.Type) bool {
 	}
 	// The unresolved alias is named in the public workflow package.
 	return named(t, workflowPkg, "Context")
-}
-
-func noun(k kind) string {
-	if k == kindChildWorkflow {
-		return "child workflow"
-	}
-	return "activity"
 }
 
 func argWord(n int) string {

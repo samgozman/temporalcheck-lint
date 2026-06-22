@@ -25,6 +25,9 @@ func Workflow(ctx workflow.Context) error {
 	// Correct child workflow.
 	_ = workflow.ExecuteChildWorkflow(ctx, ShipmentWorkflow, "order-1")
 
+	// Correct continue-as-new: same workflow, matching arity and types.
+	_ = workflow.NewContinueAsNewError(ctx, ShipmentWorkflow, "order-1")
+
 	// Struct value, pointer, and their slice forms each matched exactly.
 	p := Payload{}
 	_ = workflow.ExecuteActivity(ctx, a.SaveValue, Payload{})

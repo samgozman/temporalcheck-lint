@@ -15,4 +15,8 @@ type WorkflowRun interface{ GetID() string }
 
 type Client interface {
 	ExecuteWorkflow(ctx context.Context, options StartWorkflowOptions, workflow any, args ...any) (WorkflowRun, error)
+	// SignalWithStartWorkflow mirrors the SDK: the workflow target sits after the
+	// signal fields and options (the 6th argument), so the analyzer resolves it by
+	// a per-entry target index rather than a fixed position.
+	SignalWithStartWorkflow(ctx context.Context, workflowID string, signalName string, signalArg any, options StartWorkflowOptions, workflow any, args ...any) (WorkflowRun, error)
 }

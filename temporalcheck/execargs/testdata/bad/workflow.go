@@ -43,5 +43,10 @@ func Workflow(ctx workflow.Context) error {
 	// Wrong type rendered with a package qualifier: workflow.Context, not string.
 	_ = workflow.ExecuteActivity(ctx, a.Greet, ctx) // want `ExecuteActivity: arg 1 of "Greet" has type workflow.Context, want string \(strict-types\)`
 
+	// Continue-as-new restarts a workflow; its target carries the same leading
+	// workflow.Context, so arity and types are checked like a child workflow.
+	_ = workflow.NewContinueAsNewError(ctx, ShipmentWorkflow)     // want `NewContinueAsNewError: workflow "ShipmentWorkflow" expects 1 argument, got 0 \(arity\)`
+	_ = workflow.NewContinueAsNewError(ctx, ShipmentWorkflow, 99) // want `NewContinueAsNewError: arg 1 of "ShipmentWorkflow" has type (untyped )?int, want string \(strict-types\)`
+
 	return nil
 }

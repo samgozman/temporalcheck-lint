@@ -41,4 +41,7 @@ func caller(ctx workflow.Context) {
 	workflow.ExecuteActivity(ctx, namedParam, nil)       // want `activity "namedParam" parameter 1 has dynamic type flagged\.Payload;.*\(lossy-types\)`
 	workflow.ExecuteActivity(ctx, noCtxParam, 1)         // want `activity "noCtxParam" parameter 1 has dynamic type any;.*\(lossy-types\)`
 	workflow.ExecuteChildWorkflow(ctx, childWorkflow, 1) // want `child workflow "childWorkflow" parameter 1 has dynamic type any;.*\(lossy-types\)`
+	// NewContinueAsNewError restarts a workflow, so its target carries the same
+	// leading workflow.Context and its lossy parameter is reported the same way.
+	_ = workflow.NewContinueAsNewError(ctx, childWorkflow, 1) // want `workflow "childWorkflow" parameter 1 has dynamic type any;.*\(lossy-types\)`
 }

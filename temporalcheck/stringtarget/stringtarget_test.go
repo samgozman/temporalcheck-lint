@@ -19,6 +19,15 @@ func TestStringTarget(t *testing.T) {
 	analysistest.Run(t, analysistest.TestData(), a, "stringtargetfixtures/flagged")
 }
 
+// TestStringTarget_Client: the client.Client methods that name a workflow target
+// -- ExecuteWorkflow (target third) and SignalWithStartWorkflow (target sixth) --
+// are matched by receiver and flagged when their target is a string, while a
+// function-reference target is left alone.
+func TestStringTarget_Client(t *testing.T) {
+	a := stringtarget.NewAnalyzer(stringtarget.Settings{Enabled: true})
+	analysistest.Run(t, analysistest.TestData(), a, "stringtargetfixtures/clientstart")
+}
+
 // TestStringTarget_Benign: call shapes the analyzer must ignore even when
 // enabled -- a non-selector call, a selector into another package, a
 // function-reference target, and a non-entry-point workflow function -- produce

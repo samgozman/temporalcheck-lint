@@ -20,12 +20,24 @@ func TestArgWord(t *testing.T) {
 	}
 }
 
-func TestNoun(t *testing.T) {
-	if got := noun(kindActivity); got != "activity" {
-		t.Errorf("noun(kindActivity) = %q, want %q", got, "activity")
+// TestEntryNouns pins the diagnostic noun each entry point uses: activities say
+// "activity", a child workflow says "child workflow", and the workflow-restarting
+// or client-launched entries say "workflow".
+func TestEntryNouns(t *testing.T) {
+	for name, want := range map[string]string{
+		"ExecuteActivity":       "activity",
+		"ExecuteLocalActivity":  "activity",
+		"ExecuteChildWorkflow":  "child workflow",
+		"NewContinueAsNewError": "workflow",
+	} {
+		if got := workflowEntries[name].noun; got != want {
+			t.Errorf("workflowEntries[%q].noun = %q, want %q", name, got, want)
+		}
 	}
-	if got := noun(kindChildWorkflow); got != "child workflow" {
-		t.Errorf("noun(kindChildWorkflow) = %q, want %q", got, "child workflow")
+	for name := range clientEntries {
+		if got := clientEntries[name].noun; got != "workflow" {
+			t.Errorf("clientEntries[%q].noun = %q, want %q", name, got, "workflow")
+		}
 	}
 }
 
@@ -175,6 +187,17 @@ func TestCheckAssignableNilType(t *testing.T) {
 	// An identifier absent from the (empty) TypesInfo resolves to a nil type, so
 	// the guard returns before any Reportf (which would need a Fset and panic).
 	c.checkAssignable(pass, &ast.Ident{Name: "x"}, "ExecuteActivity", "fn", 1, types.Typ[types.String])
+}
+
+// TestCheckExecuteCallTooFewArgs covers the target-index guard: a call with no
+// argument at the target index returns before any type work, so the empty
+// TypesInfo is never consulted and fn is never dereferenced.
+func TestCheckExecuteCallTooFewArgs(t *testing.T) {
+	pass := &analysis.Pass{Fset: token.NewFileSet(), TypesInfo: &types.Info{}}
+	c := &checker{}
+	// targetIdx 2 but only two arguments: ctx and options, no target.
+	call := &ast.CallExpr{Fun: &ast.Ident{Name: "f"}, Args: []ast.Expr{&ast.Ident{Name: "ctx"}, &ast.Ident{Name: "opts"}}}
+	c.checkExecuteCall(pass, nolintInfo{}, call, nil, entry{noun: "workflow", kind: kindWorkflow, targetIdx: 2})
 }
 
 func TestNewAnalyzerMetadata(t *testing.T) {

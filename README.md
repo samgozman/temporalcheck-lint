@@ -92,9 +92,10 @@ addresses, **what it checks**, its **settings**, and its **limitations**.
 
 #### The problem
 
-`workflow.ExecuteActivity`, `workflow.ExecuteLocalActivity` and
-`workflow.ExecuteChildWorkflow` take the target as `interface{}` and its
-arguments as `...interface{}`:
+`workflow.ExecuteActivity`, `workflow.ExecuteLocalActivity`,
+`workflow.ExecuteChildWorkflow`, `workflow.NewContinueAsNewError` and the
+`client.Client` methods `ExecuteWorkflow` and `SignalWithStartWorkflow` take the
+target as `interface{}` and its arguments as `...interface{}`:
 
 ```go
 func ExecuteActivity(ctx Context, activity interface{}, args ...interface{}) Future
@@ -119,7 +120,7 @@ workflow.ExecuteActivity(ctx, a.Greet, "x", "extra") // one argument too many
 #### What it checks
 
 `execargs` resolves the **real signature** of the referenced activity /
-child-workflow function (across files and packages) and checks the call site
+workflow function (across files and packages) and checks the call site
 against it:
 
 - **Arity** — the number of arguments passed matches the number the target
@@ -137,13 +138,22 @@ against it:
   `strict-tests` (off by default); see [Settings](#settings) below for the
   context-counting difference and why only arity is checked.
 
-The injected leading parameter is handled per entry point:
+The target sits at a different argument position per entry point — second for the
+`workflow.*` calls, third for `ExecuteWorkflow` (after the options), sixth for
+`SignalWithStartWorkflow` (after the signal fields and options) — and the
+`client.Client` methods are matched by receiver. Arguments are matched against the
+target's parameters after the position of the target reference.
 
-| Entry point            | Injected first parameter         | Skipped when matching args |
-|------------------------|----------------------------------|----------------------------|
-| `ExecuteActivity`      | `context.Context` (**optional**) | only if present            |
-| `ExecuteLocalActivity` | `context.Context` (**optional**) | only if present            |
-| `ExecuteChildWorkflow` | `workflow.Context` (required)    | always                     |
+The injected leading parameter of the target is handled per entry point:
+
+| Entry point               | Injected first parameter         | Skipped when matching args |
+|---------------------------|----------------------------------|----------------------------|
+| `ExecuteActivity`         | `context.Context` (**optional**) | only if present            |
+| `ExecuteLocalActivity`    | `context.Context` (**optional**) | only if present            |
+| `ExecuteChildWorkflow`    | `workflow.Context` (required)    | always                     |
+| `NewContinueAsNewError`   | `workflow.Context` (required)    | always                     |
+| `ExecuteWorkflow`         | `workflow.Context` (required)    | always                     |
+| `SignalWithStartWorkflow` | `workflow.Context` (required)    | always                     |
 
 So for `Greet(ctx context.Context, name string)`, the checker expects exactly
 **one** call-site argument (`name`), of type `string`.
@@ -278,7 +288,8 @@ plugin verify the call.
 #### What it checks
 
 `stringtarget` flags every `ExecuteActivity` / `ExecuteLocalActivity` /
-`ExecuteChildWorkflow` call whose target argument is a string — a literal, a
+`ExecuteChildWorkflow` / `NewContinueAsNewError` and `client` `ExecuteWorkflow` /
+`SignalWithStartWorkflow` call whose target argument is a string — a literal, a
 string variable, or a named string type — so you can refactor it to a function
 reference. A call that already passes a function reference is never flagged.
 
@@ -534,8 +545,9 @@ workflow.ExecuteActivity(ctx, Charge, amount)
 #### What it checks
 
 `lossynumber` resolves the function referenced by each `workflow.ExecuteActivity`,
-`workflow.ExecuteLocalActivity`, `workflow.ExecuteChildWorkflow` and
-`client.ExecuteWorkflow` call to its real signature, then flags any **top-level**
+`workflow.ExecuteLocalActivity`, `workflow.ExecuteChildWorkflow`,
+`workflow.NewContinueAsNewError`, `client.ExecuteWorkflow` and
+`client.SignalWithStartWorkflow` call to its real signature, then flags any **top-level**
 parameter or **non-error return** whose type is one of those lossy dynamic forms.
 The framework-injected leading context (`context.Context` for activities,
 `workflow.Context` for workflows) and a trailing `error` are skipped. The fix is a

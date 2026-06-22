@@ -13,13 +13,14 @@ import (
 	"go.temporal.io/sdk/workflow"
 )
 
-// execargs reads each Execute* call as (ctx, target, args...). These assignments
-// stop compiling if the real SDK changes that shape; keep them in sync with the
-// stub at testdata/temporalsdk.
+// execargs/stringtarget/lossynumber read each workflow.* target+args call as
+// (ctx, target, args...). These assignments stop compiling if the real SDK changes
+// that shape; keep them in sync with the stub at testdata/temporalsdk.
 var (
 	_ func(workflow.Context, interface{}, ...interface{}) workflow.Future              = workflow.ExecuteActivity
 	_ func(workflow.Context, interface{}, ...interface{}) workflow.Future              = workflow.ExecuteLocalActivity
 	_ func(workflow.Context, interface{}, ...interface{}) workflow.ChildWorkflowFuture = workflow.ExecuteChildWorkflow
+	_ func(workflow.Context, interface{}, ...interface{}) error                        = workflow.NewContinueAsNewError
 )
 
 // The strict-tests checks read each TestWorkflowEnvironment mock setup as
@@ -65,11 +66,16 @@ var (
 	_ func(converter.EncodedValue, interface{}) error                         = converter.EncodedValue.Get
 )
 
-// lossynumber resolves the workflow target of client.ExecuteWorkflow, read as
-// (ctx, options, target, args...). This method expression stops compiling if the
-// real SDK changes that shape or moves ExecuteWorkflow off client.Client — the
-// cue to update the stub and the check's client entry; keep the client stub at
+// execargs/stringtarget/lossynumber resolve the workflow target of the
+// client.Client entry points: ExecuteWorkflow read as (ctx, options, target,
+// args...) and SignalWithStartWorkflow read as (ctx, id, signalName, signalArg,
+// options, target, args...). These method expressions stop compiling if the real
+// SDK changes those shapes or moves either method off client.Client — the cue to
+// update the stub and the checks' client entries; keep the client stub at
 // testdata/temporalsdk in sync.
 var temporalClient client.Client
 
-var _ func(context.Context, client.StartWorkflowOptions, interface{}, ...interface{}) (client.WorkflowRun, error) = temporalClient.ExecuteWorkflow
+var (
+	_ func(context.Context, client.StartWorkflowOptions, interface{}, ...interface{}) (client.WorkflowRun, error)                                = temporalClient.ExecuteWorkflow
+	_ func(context.Context, string, string, interface{}, client.StartWorkflowOptions, interface{}, ...interface{}) (client.WorkflowRun, error) = temporalClient.SignalWithStartWorkflow
+)

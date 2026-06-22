@@ -17,6 +17,11 @@ import (
 
 const (
 	workflowPkg = "go.temporal.io/sdk/workflow"
+	// clientPkg is where the SDK declares the Client interface directly (unlike the
+	// aliased Context type), so client.ExecuteWorkflow / SignalWithStartWorkflow
+	// resolve with receiver client.Client. internalPkg.Client is a separate interface
+	// client.Client implements; we accept it too, defensively.
+	clientPkg = "go.temporal.io/sdk/client"
 	// workflowInternalPkg is where the SDK actually declares the workflow types.
 	// workflow.Context is published as `type Context = internal.Context`, so the
 	// resolved named type lives here, not in workflowPkg.
@@ -68,16 +73,53 @@ type Settings struct {
 type kind int
 
 const (
-	kindActivity      kind = iota // leading context.Context is OPTIONAL (skip only if present)
-	kindChildWorkflow             // leading workflow.Context is always injected (skip it)
+	kindActivity kind = iota // leading context.Context is OPTIONAL (skip only if present)
+	kindWorkflow             // leading workflow.Context is always injected (skip it)
 )
 
-// entryPoints are the workflow.* functions this analyzer understands.
-// Supporting another one is a single row.
-var entryPoints = map[string]kind{
-	"ExecuteActivity":      kindActivity,
-	"ExecuteLocalActivity": kindActivity,
-	"ExecuteChildWorkflow": kindChildWorkflow,
+// entry describes one target+args entry point: how the diagnostic names the
+// target, which leading parameter the target carries (kind), and which call
+// argument is the target reference.
+type entry struct {
+	noun      string
+	kind      kind
+	targetIdx int
+}
+
+// workflowEntries are the workflow.* package functions this analyzer understands.
+// Each names its target as the second argument: ExecuteActivity(ctx, target,
+// args...) / NewContinueAsNewError(ctx, target, args...). Supporting another is a
+// single row.
+var workflowEntries = map[string]entry{
+	"ExecuteActivity":       {noun: "activity", kind: kindActivity, targetIdx: 1},
+	"ExecuteLocalActivity":  {noun: "activity", kind: kindActivity, targetIdx: 1},
+	"ExecuteChildWorkflow":  {noun: "child workflow", kind: kindWorkflow, targetIdx: 1},
+	"NewContinueAsNewError": {noun: "workflow", kind: kindWorkflow, targetIdx: 1},
+}
+
+// clientEntries are the client.Client methods this analyzer understands. The
+// target index differs per method: ExecuteWorkflow(ctx, options, target, args...)
+// names it third; SignalWithStartWorkflow(ctx, id, signalName, signalArg, options,
+// target, args...) names it sixth.
+var clientEntries = map[string]entry{
+	"ExecuteWorkflow":         {noun: "workflow", kind: kindWorkflow, targetIdx: 2},
+	"SignalWithStartWorkflow": {noun: "workflow", kind: kindWorkflow, targetIdx: 5},
+}
+
+// entryFor reports whether fn is a target+args entry point this analyzer checks.
+// workflow.* are package functions; the client methods are matched by name and
+// receiver, since the SDK declares them on client.Client rather than in a package
+// we can match by path.
+func entryFor(fn *types.Func) (entry, bool) {
+	if fn.Pkg().Path() == workflowPkg {
+		e, ok := workflowEntries[fn.Name()]
+		return e, ok
+	}
+	if e, ok := clientEntries[fn.Name()]; ok &&
+		(isReceiver(fn, clientPkg, "Client") || isReceiver(fn, workflowInternalPkg, "Client")) {
+		return e, true
+	}
+	return entry{}, false
 }
 
 // testEnvType is the testsuite type whose mock-setup methods StrictTests checks.
@@ -104,7 +146,7 @@ func NewAnalyzer(settings Settings) *analysis.Analyzer {
 	}
 	return &analysis.Analyzer{
 		Name: "execargs",
-		Doc:  "check that arguments to Temporal ExecuteActivity/ExecuteLocalActivity/ExecuteChildWorkflow match the target function signature",
+		Doc:  "check that arguments to Temporal ExecuteActivity/ExecuteLocalActivity/ExecuteChildWorkflow/NewContinueAsNewError and client ExecuteWorkflow/SignalWithStartWorkflow match the target function signature",
 		URL:  "https://github.com/samgozman/temporalcheck-lint",
 		Run:  c.run,
 	}
@@ -154,25 +196,19 @@ func (c *checker) checkCall(pass *analysis.Pass, nolint nolintInfo, call *ast.Ca
 	if !ok || fn.Pkg() == nil {
 		return
 	}
-	switch fn.Pkg().Path() {
-	case workflowPkg:
-		c.checkExecuteCall(pass, nolint, call, fn)
-	case workflowInternalPkg:
-		if c.strictTests {
-			c.checkTestCall(pass, nolint, call, fn)
-		}
+	if e, ok := entryFor(fn); ok {
+		c.checkExecuteCall(pass, nolint, call, fn, e)
+		return
+	}
+	if c.strictTests && fn.Pkg().Path() == workflowInternalPkg {
+		c.checkTestCall(pass, nolint, call, fn)
 	}
 }
 
-func (c *checker) checkExecuteCall(pass *analysis.Pass, nolint nolintInfo, call *ast.CallExpr, fn *types.Func) {
-	k, ok := entryPoints[fn.Name()]
-	if !ok {
-		return
-	}
-
+func (c *checker) checkExecuteCall(pass *analysis.Pass, nolint nolintInfo, call *ast.CallExpr, fn *types.Func, e entry) {
 	// Honor //nolint directives ourselves so suppression works the same way it
 	// does in standalone/analysistest runs, not only under golangci-lint. Checked
-	// after confirming this is an Execute* call, so unrelated calls cost nothing.
+	// after confirming this is an entry-point call, so unrelated calls cost nothing.
 	if nolint.suppressesCall(pass.Fset, call) {
 		return
 	}
@@ -183,16 +219,19 @@ func (c *checker) checkExecuteCall(pass *analysis.Pass, nolint nolintInfo, call 
 		return
 	}
 
-	// Shape is always (ctx, target, args...); a compiling Execute* call therefore
-	// has at least two arguments, so call.Args[1] is safe to read.
-	sig, ok := pass.TypesInfo.TypeOf(call.Args[1]).(*types.Signature)
+	// A compiling call always has the target present, but guard the index so a
+	// malformed/partial AST can't panic.
+	if len(call.Args) <= e.targetIdx {
+		return
+	}
+	sig, ok := pass.TypesInfo.TypeOf(call.Args[e.targetIdx]).(*types.Signature)
 	if !ok {
 		// Target is registered by its string name, or is a value we can't
 		// resolve to a signature statically. Out of scope.
 		return
 	}
 
-	c.checkSignature(pass, call, fn.Name(), k, sig, call.Args[2:])
+	c.checkSignature(pass, call, fn.Name(), e, sig, call.Args[e.targetIdx+1:])
 }
 
 // checkTestCall verifies the matcher arity of a TestWorkflowEnvironment mock

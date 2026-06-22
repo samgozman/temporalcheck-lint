@@ -20,6 +20,15 @@ func TestExecArgs(t *testing.T) {
 		"temporalcheckfixtures/good", "temporalcheckfixtures/bad", "temporalcheckfixtures/crosspkg")
 }
 
+// TestExecArgs_Client: the client.Client entry points -- ExecuteWorkflow (target
+// third) and SignalWithStartWorkflow (target sixth) -- are matched by receiver,
+// and their workflow target's arity and types are checked with the leading
+// workflow.Context skipped, just like a child workflow.
+func TestExecArgs_Client(t *testing.T) {
+	a := execargs.NewAnalyzer(execargs.Settings{StrictTypes: true})
+	analysistest.Run(t, analysistest.TestData(), a, "temporalcheckfixtures/clientexec")
+}
+
 // TestExecArgs_StrictTypesDisabled: with StrictTypes off (the default), type
 // mismatches are silent but arity is still checked.
 func TestExecArgs_StrictTypesDisabled(t *testing.T) {
