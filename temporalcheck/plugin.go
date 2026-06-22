@@ -14,6 +14,7 @@ import (
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/lossynumber"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/nonserializable"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/optionsdiscard"
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/sensitiveargs"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/stringtarget"
 )
 
@@ -33,6 +34,7 @@ type Settings struct {
 	LossyNumber     LossyNumberSettings     `json:"lossynumber"`
 	NonSerializable NonSerializableSettings `json:"nonserializable"`
 	ContinueAsNew   ContinueAsNewSettings   `json:"continueasnew"`
+	SensitiveArgs   SensitiveArgsSettings   `json:"sensitiveargs"`
 }
 
 // ExecargsSettings configures the execargs analyzer. Pointers distinguish
@@ -158,6 +160,23 @@ type ContinueAsNewSettings struct {
 	Disabled *bool `json:"disabled"`
 }
 
+// SensitiveArgsSettings configures the sensitiveargs analyzer, which flags
+// activity/workflow parameters (and the exported fields of struct parameters)
+// whose name matches a sensitive-data pattern -- since Temporal records arguments
+// in durable workflow history, a useful first line of defence against leaking
+// secrets or PII into that history.
+type SensitiveArgsSettings struct {
+	// Enabled is the master switch (default false). The check is a name-heuristic
+	// that can produce false positives, so it is opt-in like the stringtarget
+	// analyzer; with Enabled off the analyzer reports nothing.
+	Enabled *bool `json:"enabled"`
+
+	// Pattern is the regular expression matched (unanchored) against parameter and
+	// struct-field names. Empty uses the built-in default
+	// (cvv|pan|card.?number|password|secret|ssn|token, case insensitive).
+	Pattern *string `json:"pattern"`
+}
+
 type plugin struct {
 	settings Settings
 }
@@ -229,6 +248,14 @@ func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 	if p.settings.ContinueAsNew.Disabled != nil {
 		continueAsNewDisabled = *p.settings.ContinueAsNew.Disabled
 	}
+	sensitiveArgsEnabled := false
+	if p.settings.SensitiveArgs.Enabled != nil {
+		sensitiveArgsEnabled = *p.settings.SensitiveArgs.Enabled
+	}
+	sensitiveArgsPattern := ""
+	if p.settings.SensitiveArgs.Pattern != nil {
+		sensitiveArgsPattern = *p.settings.SensitiveArgs.Pattern
+	}
 	return []*analysis.Analyzer{
 		execargs.NewAnalyzer(execargs.Settings{
 			Disabled:       disabled,
@@ -259,6 +286,10 @@ func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 		}),
 		continueasnew.NewAnalyzer(continueasnew.Settings{
 			Disabled: continueAsNewDisabled,
+		}),
+		sensitiveargs.NewAnalyzer(sensitiveargs.Settings{
+			Enabled: sensitiveArgsEnabled,
+			Pattern: sensitiveArgsPattern,
 		}),
 		// Future Temporal analyzers (e.g. registration coverage, retry-policy
 		// sanity, non-determinism heuristics) plug in here.

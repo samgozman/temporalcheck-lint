@@ -81,3 +81,13 @@ linters:
             # statement or `_ =`) instead of returned, so the workflow silently ends
             # instead of continuing as new. On by default; set true to turn it off.
             disabled: false
+          sensitiveargs:
+            # Flag activity/workflow parameters (and exported struct fields) whose
+            # name matches a sensitive-data pattern, since Temporal records arguments
+            # in durable workflow history. A name heuristic, so it is off by default;
+            # set enabled true to opt in. A useful first line of defence for keeping
+            # secrets and PII out of history.
+            enabled: true
+            # Regexp matched (unanchored) against parameter and exported-field names.
+            # Omit to use the default: (?i)cvv|pan|card.?number|password|secret|ssn|token
+            pattern: "(?i)cvv|pan|card.?number|password|secret|ssn|token"

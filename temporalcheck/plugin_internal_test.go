@@ -38,6 +38,10 @@ func TestNew(t *testing.T) {
 		"continueasnew": map[string]any{
 			"disabled": false,
 		},
+		"sensitiveargs": map[string]any{
+			"enabled": true,
+			"pattern": "(?i)apikey",
+		},
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -47,7 +51,7 @@ func TestNew(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildAnalyzers: %v", err)
 	}
-	want := []string{"execargs", "stringtarget", "optionsdiscard", "activitytimeout", "futureget", "lossynumber", "nonserializable", "continueasnew"}
+	want := []string{"execargs", "stringtarget", "optionsdiscard", "activitytimeout", "futureget", "lossynumber", "nonserializable", "continueasnew", "sensitiveargs"}
 	if len(analyzers) != len(want) {
 		t.Fatalf("BuildAnalyzers returned %d analyzers, want %d", len(analyzers), len(want))
 	}
@@ -87,8 +91,8 @@ func TestNew_Disabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildAnalyzers: %v", err)
 	}
-	if len(analyzers) != 8 {
-		t.Fatalf("BuildAnalyzers returned %d analyzers, want 8", len(analyzers))
+	if len(analyzers) != 9 {
+		t.Fatalf("BuildAnalyzers returned %d analyzers, want 9", len(analyzers))
 	}
 }
 

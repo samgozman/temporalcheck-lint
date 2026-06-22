@@ -137,6 +137,20 @@ Initial proof of concept.
   assigned to a named variable is left alone, since a `return err` may follow and
   proving otherwise would need data-flow analysis. Turn it off via the
   `continueasnew.disabled` setting.
+- `sensitiveargs` analyzer (opt-in): flags an activity/workflow **parameter whose
+  name** — or, for a struct parameter, an **exported field whose name** — matches a
+  configurable regular expression, since Temporal records arguments in durable
+  workflow history. Same target resolution as the sibling analyzers
+  (`workflow.ExecuteActivity`/`ExecuteLocalActivity`/`ExecuteChildWorkflow`/
+  `NewContinueAsNewError` and `client.ExecuteWorkflow`/`SignalWithStartWorkflow`).
+  The default pattern is `(?i)cvv|pan|card.?number|password|secret|ssn|token`,
+  overridable via the `sensitiveargs.pattern` setting. A name heuristic, so it is
+  off by default (enable with `sensitiveargs.enabled`) — a useful first line of
+  defence for keeping secrets and PII out of history. Top level only: it does not
+  descend into nested structs, slices or maps, and only exported struct fields are
+  considered (unexported fields are never serialized); it checks parameters, not
+  return values, and skips string-registered targets. Diagnostics are tagged
+  `(sensitive)`.
 - Hermetic, offline `analysistest` fixtures: `testdata/` is a self-contained
   module that resolves `go.temporal.io/sdk` via a local stub, so it resolves in
   IDEs without pulling the real SDK.

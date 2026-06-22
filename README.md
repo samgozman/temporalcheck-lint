@@ -59,6 +59,9 @@ settings:
     disabled: false
   futureget:
     disabled: false
+  sensitiveargs:
+    enabled: true
+    pattern: "(?i)cvv|pan|card.?number|password|secret|ssn|token"
 ```
 
 Each analyzer's keys are documented in its section under [Analyzers](#analyzers).
@@ -746,6 +749,76 @@ the linter name, `(continueasnew)`, after that).
   `NewContinueAsNewError` call site itself; it does not track a continue-as-new
   error passed into a helper and returned from there.
 
+### `sensitiveargs`
+
+#### The problem
+
+Temporal records every activity and workflow argument in its **event history**,
+which is persisted durably and replayed for the life of the workflow. Whatever you
+pass as an argument is written verbatim into that history:
+
+```go
+workflow.ExecuteActivity(ctx, ChargeCard, cardNumber, cvv)
+```
+
+The card number and CVV now live in durable storage, outlive the request, and are
+visible to anyone who can read the workflow's history. The same is true of a struct
+argument — every exported field travels into history with it. The safer pattern is
+to pass an opaque reference (an id, a vault key, a handle) and fetch the secret
+inside the activity, so the secret itself never enters history.
+
+This makes the analyzer a useful first line of defence for keeping secrets and
+**PII** out of durable history.
+
+#### What it checks
+
+`sensitiveargs` flags any `ExecuteActivity` / `ExecuteLocalActivity` /
+`ExecuteChildWorkflow` / `NewContinueAsNewError` and `client` `ExecuteWorkflow` /
+`SignalWithStartWorkflow` call whose resolved target has a **parameter whose name**
+— or, for a struct parameter, an **exported field whose name** — matches a
+configurable regular expression. The default pattern is, case-insensitively:
+
+```
+cvv|pan|card.?number|password|secret|ssn|token
+```
+
+This check is **off by default**. Matching on names is a heuristic: it can flag a
+benign `passwordPolicy` parameter or miss an obfuscated one, so it is opt-in and
+the pattern is fully tunable to your own naming conventions.
+
+##### Example diagnostics
+
+```
+workflow.go:14  activity "ChargeCard" parameter 2 "cvv" matches the sensitive-data pattern; Temporal records arguments in durable workflow history — pass an opaque reference and fetch the secret inside the activity instead (sensitive)
+workflow.go:21  activity "Charge" parameter 1 (type PaymentRequest) field "CardNumber" matches the sensitive-data pattern; Temporal records arguments in durable workflow history — pass an opaque reference and fetch the secret inside the activity instead (sensitive)
+```
+
+The message names the **entry point**, the offending parameter (and field), and
+ends with the source `(sensitive)` (golangci-lint then appends the linter name,
+`(sensitiveargs)`, after that).
+
+#### Settings
+
+| Key       | Type   | Default                                       | Description                                                                                          |
+|-----------|--------|-----------------------------------------------|------------------------------------------------------------------------------------------------------|
+| `enabled` | bool   | `false`                                       | Master switch — with this off the analyzer is silent                                                 |
+| `pattern` | string | `(?i)cvv\|pan\|card.?number\|password\|secret\|ssn\|token` | The regexp matched (unanchored) against parameter and exported-field names; empty uses the default |
+
+#### Limitations
+
+- **It is a name heuristic.** It matches *names*, not values or types, so a
+  sensitive value carried by an innocuously named parameter is not caught, and a
+  benign parameter that merely reads as sensitive is. Tune `pattern` to your
+  conventions and pair it with code review.
+- **Top level only.** It inspects each user parameter's name and, for a struct (or
+  pointer-to-struct) parameter, its exported fields. It does not descend into
+  nested structs, slices or maps, and only exported struct fields are considered
+  (unexported fields are never serialized into history).
+- **Parameters only.** It checks call arguments — the secrets-crossing-the-wire
+  case — not return values.
+- **Resolvable targets only.** Like the other analyzers it skips a target named by
+  a registered string, which can't be resolved to a signature.
+
 ## Development
 
 ```bash
@@ -843,12 +916,20 @@ temporalcheck-lint/
 │   │   ├── nonserializable_internal_test.go
 │   │   ├── nolint_internal_test.go
 │   │   └── testdata/             # self-contained fixture module
-│   └── continueasnew/            # flag discarded (not-returned) NewContinueAsNewError results
-│       ├── continueasnew.go      # settings, analyzer, discard dispatch
-│       ├── check.go              # NewContinueAsNewError call matching
+│   ├── continueasnew/            # flag discarded (not-returned) NewContinueAsNewError results
+│   │   ├── continueasnew.go      # settings, analyzer, discard dispatch
+│   │   ├── check.go              # NewContinueAsNewError call matching
+│   │   ├── nolint.go             # //nolint directive suppression
+│   │   ├── continueasnew_test.go # analysistest
+│   │   ├── continueasnew_internal_test.go
+│   │   ├── nolint_internal_test.go
+│   │   └── testdata/             # self-contained fixture module
+│   └── sensitiveargs/            # opt-in: flag sensitively-named params/struct fields
+│       ├── sensitiveargs.go      # settings, analyzer, call dispatch
+│       ├── check.go              # signature/struct-field name matching
 │       ├── nolint.go             # //nolint directive suppression
-│       ├── continueasnew_test.go # analysistest
-│       ├── continueasnew_internal_test.go
+│       ├── sensitiveargs_test.go # analysistest
+│       ├── sensitiveargs_internal_test.go
 │       ├── nolint_internal_test.go
 │       └── testdata/             # self-contained fixture module
 ├── conformance/                  # CI-only module: real-SDK contract test (see below)
