@@ -67,6 +67,8 @@ settings:
     require-options: true
   workflowstate:
     disabled: false
+  workflowlogger:
+    enabled: true
 ```
 
 Each analyzer's keys are documented in its section under [Analyzers](#analyzers).
@@ -1058,6 +1060,91 @@ linter name `(temporalcheck)`.
   expression that does not resolve to a plain variable is left alone rather than
   risked as a false positive.
 
+### `workflowlogger`
+
+#### The problem
+
+Temporal workflows **replay**: a worker rebuilds a workflow's state by
+re-executing its code against recorded history, running the same statements again.
+A standard-library or third-party logging call in workflow code therefore emits
+its line on *every* replay, and those loggers have no notion of replay to suppress
+it:
+
+```go
+func MyWorkflow(ctx workflow.Context) error {
+	log.Printf("processing order %s", id) // re-logged on every replay
+	return nil
+}
+```
+
+The SDK's `workflow.GetLogger(ctx)` is replay-aware — it is wired into the replay
+machinery and skips duplicate output — which is why Temporal documents that
+workflow code should log only through it:
+
+```go
+func MyWorkflow(ctx workflow.Context) error {
+	workflow.GetLogger(ctx).Info("processing order", "id", id) // replay-aware
+	return nil
+}
+```
+
+#### What it checks
+
+`workflowlogger` treats any function whose first parameter is `workflow.Context`
+as workflow code — **including the closures lexically nested in it** (`workflow.Go`
+coroutines, `Await` conditions, `Selector` callbacks) — and flags logging calls in
+it:
+
+| Source | Matched |
+|--------|---------|
+| `log` | `Print`/`Printf`/`Println`, `Fatal*`, `Panic*`, `Output` — package functions and `*log.Logger` methods |
+| `log/slog` | `Debug`/`Info`/`Warn`/`Error`/`Log`, their `*Context` forms, `LogAttrs` — package functions and `*slog.Logger` methods |
+| `fmt` | `Print`/`Printf`/`Println`; `Fprint`/`Fprintf`/`Fprintln` **only when the writer is `os.Stdout`/`os.Stderr`** |
+| `zerolog` | any logging chain, e.g. `log.Info().Msg(...)` — matched by import path (`github.com/rs/zerolog`), reported once at the chain's outermost call |
+
+Activities — whose first parameter is the standard `context.Context`, not
+`workflow.Context` — are **not** workflow code and are left alone; they do not
+replay, so logging in them is not a determinism hazard.
+
+This is **opt-in** (off by default): logging through a stdlib or third-party logger
+from a workflow double-logs on replay, but configuring a custom logger or routing
+output through other means is a legitimate choice for some teams, so the analyzer
+stays silent until a project turns it on — like `stringtarget` and `sensitiveargs`.
+
+##### Example diagnostics
+
+```
+workflow.go:10  logging via log in workflow code double-logs on every replay and is not replay-aware; use workflow.GetLogger(ctx) instead (workflow-logger)
+```
+
+The message ends with `(workflow-logger)`, and golangci-lint then appends the
+linter name `(temporalcheck)`.
+
+#### Settings
+
+| Key       | Type | Default | Description                                          |
+|-----------|------|---------|------------------------------------------------------|
+| `enabled` | bool | `false` | Turn the `workflowlogger` analyzer on (opt-in)        |
+
+#### Limitations
+
+- **Opt-in, so off until enabled.** Unlike the always-on correctness checks, this
+  one reports nothing until `workflowlogger.enabled: true`.
+- **Direct logging only — no call graph.** A logging call inside a helper that does
+  *not* take `workflow.Context` but is reached from a workflow is not flagged;
+  detecting that needs transitive analysis (and the false positives it carries).
+- **`fmt.Fprint*` only to standard streams.** A write whose target isn't statically
+  `os.Stdout`/`os.Stderr` (a buffer, a `strings.Builder`, a writer held in a
+  variable) is not logging and is skipped, keeping the check free of false
+  positives on non-logging `Fprint*` uses.
+- **zerolog matched by import path.** Any call resolving under
+  `github.com/rs/zerolog` on a logger/event method counts; package-level
+  constructors such as `zerolog.New` are excluded, and a chain is reported once at
+  its outermost call rather than per chained method.
+- **Unresolved callees are skipped.** A call whose callee cannot be resolved to a
+  function (an invoked func-typed value, a conversion) is left alone rather than
+  guessed at.
+
 ## Development
 
 ```bash
@@ -1185,13 +1272,20 @@ temporalcheck-lint/
 │   │   ├── workeroptions_test.go # analysistest
 │   │   ├── workeroptions_internal_test.go
 │   │   └── testdata/             # self-contained fixture module
-│   └── workflowstate/            # flag package-level variable mutation from workflow code
-│       ├── workflowstate.go      # settings, analyzer, workflow-scope walk
-│       ├── check.go              # workflow-context detection + root-object resolution
+│   ├── workflowstate/            # flag package-level variable mutation from workflow code
+│   │   ├── workflowstate.go      # settings, analyzer, workflow-scope walk
+│   │   ├── check.go              # workflow-context detection + root-object resolution
+│   │   ├── nolint.go             # //nolint directive suppression
+│   │   ├── workflowstate_test.go # analysistest
+│   │   ├── workflowstate_internal_test.go
+│   │   └── testdata/             # self-contained fixture module
+│   └── workflowlogger/           # flag stdlib/zerolog logging from workflow code (opt-in)
+│       ├── workflowlogger.go     # settings, analyzer, workflow-scope walk
+│       ├── check.go              # workflow-context detection + logging-call matching
 │       ├── nolint.go             # //nolint directive suppression
-│       ├── workflowstate_test.go # analysistest
-│       ├── workflowstate_internal_test.go
-│       └── testdata/             # self-contained fixture module
+│       ├── workflowlogger_test.go # analysistest
+│       ├── workflowlogger_internal_test.go
+│       └── testdata/             # self-contained fixture module (SDK + zerolog stubs)
 ├── conformance/                  # CI-only module: real-SDK contract test (see below)
 ├── .custom-gcl.yml               # custom golangci-lint build config
 ├── .golangci.yml                 # example consumer config (also self-lints this repo)

@@ -116,3 +116,10 @@ linters:
             # The idiomatic capture-and-mutate of a local from a workflow.Go/Await/
             # Selector closure is not flagged. On by default; set true to turn it off.
             disabled: false
+          workflowlogger:
+            # Flag stdlib (log, log/slog, fmt.Print*) and zerolog logging calls from
+            # workflow code: they re-emit on every replay and are not replay-aware,
+            # unlike workflow.GetLogger(ctx). fmt.Fprint* counts only when writing to
+            # os.Stdout/os.Stderr. Off by default (some teams wire their own logging);
+            # set enabled true to opt in.
+            enabled: true

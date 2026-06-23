@@ -18,6 +18,7 @@ import (
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/sensitiveargs"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/stringtarget"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/workeroptions"
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/workflowlogger"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/workflowstate"
 )
 
@@ -41,6 +42,7 @@ type Settings struct {
 	OptionsContext  OptionsContextSettings  `json:"optionscontext"`
 	WorkerOptions   WorkerOptionsSettings   `json:"workeroptions"`
 	WorkflowState   WorkflowStateSettings   `json:"workflowstate"`
+	WorkflowLogger  WorkflowLoggerSettings  `json:"workflowlogger"`
 }
 
 // ExecargsSettings configures the execargs analyzer. Pointers distinguish
@@ -223,6 +225,19 @@ type WorkflowStateSettings struct {
 	Disabled *bool `json:"disabled"`
 }
 
+// WorkflowLoggerSettings configures the workflowlogger analyzer, which flags
+// standard-library (log, log/slog, fmt.Print*) and zerolog logging calls made
+// from Temporal workflow code -- they double-log on every replay and are not
+// replay-aware.
+type WorkflowLoggerSettings struct {
+	// Enabled is the master switch (default false). The check is opt-in: logging
+	// through a stdlib or third-party logger from a workflow double-logs on replay,
+	// but some teams deliberately wire their own logging, so the analyzer stays
+	// silent until a project opts in, like the stringtarget analyzer. With Enabled
+	// off the analyzer reports nothing.
+	Enabled *bool `json:"enabled"`
+}
+
 type plugin struct {
 	settings Settings
 }
@@ -318,6 +333,10 @@ func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 	if p.settings.WorkflowState.Disabled != nil {
 		workflowStateDisabled = *p.settings.WorkflowState.Disabled
 	}
+	workflowLoggerEnabled := false
+	if p.settings.WorkflowLogger.Enabled != nil {
+		workflowLoggerEnabled = *p.settings.WorkflowLogger.Enabled
+	}
 	return []*analysis.Analyzer{
 		execargs.NewAnalyzer(execargs.Settings{
 			Disabled:       disabled,
@@ -362,6 +381,9 @@ func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 		}),
 		workflowstate.NewAnalyzer(workflowstate.Settings{
 			Disabled: workflowStateDisabled,
+		}),
+		workflowlogger.NewAnalyzer(workflowlogger.Settings{
+			Enabled: workflowLoggerEnabled,
 		}),
 		// Future Temporal analyzers (e.g. registration coverage, retry-policy
 		// sanity, non-determinism heuristics) plug in here.

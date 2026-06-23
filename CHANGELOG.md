@@ -201,6 +201,23 @@ Initial proof of concept.
   whose root cannot be resolved to a plain variable is skipped rather than
   guessed at. Tagged `(global-mutation)`; turn it off via
   `workflowstate.disabled`.
+- `workflowlogger` analyzer (**opt-in**, off by default): flags standard-library
+  and zerolog logging calls made from workflow code, where they double-log on every
+  replay and are not replay-aware. Temporal replays workflow code against recorded
+  history, so a direct logging call re-emits its line on each replay; the SDK's
+  `workflow.GetLogger(ctx)` is wired into the replay machinery and suppresses
+  duplicate output, which is why workflow code should log only through it. Matched
+  calls: the `log` package print/`Fatal`/`Panic` family (functions and
+  `*log.Logger` methods), the `log/slog` output functions and `*slog.Logger`
+  methods, `fmt.Print`/`Printf`/`Println`, `fmt.Fprint`/`Fprintf`/`Fprintln` **when
+  the writer is `os.Stdout`/`os.Stderr`** (a write to a buffer is not logging and is
+  skipped), and `zerolog` logging chains such as `log.Info().Msg(...)` (matched by
+  import path, reported once at the chain's outermost call; package-level
+  constructors like `zerolog.New` are excluded). Workflow code is any function whose
+  first parameter is `workflow.Context`, including the closures nested in it;
+  activities (`context.Context`) are deliberately untouched, since they do not
+  replay. Off by default because some teams deliberately wire their own logging.
+  Tagged `(workflow-logger)`; turn it on via `workflowlogger.enabled`.
 - Hermetic, offline `analysistest` fixtures: `testdata/` is a self-contained
   module that resolves `go.temporal.io/sdk` via a local stub, so it resolves in
   IDEs without pulling the real SDK.

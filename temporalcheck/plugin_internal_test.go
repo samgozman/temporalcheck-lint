@@ -52,6 +52,9 @@ func TestNew(t *testing.T) {
 		"workflowstate": map[string]any{
 			"disabled": false,
 		},
+		"workflowlogger": map[string]any{
+			"enabled": true,
+		},
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -61,7 +64,7 @@ func TestNew(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildAnalyzers: %v", err)
 	}
-	want := []string{"execargs", "stringtarget", "optionsdiscard", "activitytimeout", "futureget", "lossynumber", "nonserializable", "continueasnew", "sensitiveargs", "optionscontext", "workeroptions", "workflowstate"}
+	want := []string{"execargs", "stringtarget", "optionsdiscard", "activitytimeout", "futureget", "lossynumber", "nonserializable", "continueasnew", "sensitiveargs", "optionscontext", "workeroptions", "workflowstate", "workflowlogger"}
 	if len(analyzers) != len(want) {
 		t.Fatalf("BuildAnalyzers returned %d analyzers, want %d", len(analyzers), len(want))
 	}
@@ -101,8 +104,8 @@ func TestNew_Disabled(t *testing.T) {
 	if err != nil {
 		t.Fatalf("BuildAnalyzers: %v", err)
 	}
-	if len(analyzers) != 12 {
-		t.Fatalf("BuildAnalyzers returned %d analyzers, want 12", len(analyzers))
+	if len(analyzers) != 13 {
+		t.Fatalf("BuildAnalyzers returned %d analyzers, want 13", len(analyzers))
 	}
 }
 
