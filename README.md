@@ -65,6 +65,8 @@ settings:
   workeroptions:
     disabled: false
     require-options: true
+  workflowstate:
+    disabled: false
 ```
 
 Each analyzer's keys are documented in its section under [Analyzers](#analyzers).
@@ -964,6 +966,98 @@ Each message ends with the rule that produced it — `(worker-panic)` or
   without the struct layout, so it is skipped; an empty `worker.Options{}` triggers
   `require-options` only when passed directly to `worker.New`.
 
+### `workflowstate`
+
+#### The problem
+
+A Temporal workflow must be **deterministic**: on replay the SDK re-executes the
+workflow code against recorded history and it must issue the same commands.
+Worker processes also run many workflow executions concurrently. Mutating a
+package-level variable from workflow code breaks both guarantees at once — the
+write is not part of the replayed state, and the variable is shared across every
+execution in the worker, so the writes race:
+
+```go
+var requestCount int // package level
+
+func MyWorkflow(ctx workflow.Context) error {
+	requestCount++ // non-deterministic on replay, and races across executions
+	return nil
+}
+```
+
+Temporal's own `workflowcheck` tool documents this as a gap it does not fill:
+*"this will not catch all cases of non-determinism such as global var mutation"*,
+because across an entire transitive call tree global mutation can't be told apart
+from legitimate use (lazy init, caches). A golangci-lint analyzer only walks the
+package's own source, so it can flag the **direct** mutation in workflow code
+without that false-positive explosion.
+
+#### What it checks
+
+`workflowstate` treats any function whose first parameter is `workflow.Context`
+as workflow code — **including the closures lexically nested in it**, such as
+`workflow.Go` coroutines, `Await` conditions and `Selector` callbacks. Within
+that code it reports every assignment, `++`/`--` and compound assignment whose
+root object resolves to a **package-level variable** (this package or another),
+reached directly or through a field, an index, a pointer dereference or a
+parenthesis:
+
+```go
+counter++                  // flagged
+cfg.Retries = 3            // flagged (field of a package-level struct)
+cache["k"] = 1             // flagged (index into a package-level map)
+otherpkg.Global = 2        // flagged (cross-package)
+```
+
+It deliberately does **not** flag the SDK's idiomatic capture-and-mutate of a
+**local**, which is how you move data between deterministic coroutines:
+
+```go
+total := 0
+workflow.Go(ctx, func(ctx workflow.Context) {
+	total++ // captured local — fine, and NOT flagged
+})
+workflow.Await(ctx, func() bool { return total == 5 })
+```
+
+The discriminator is the variable's scope: a package-level variable fires; a
+local, parameter or receiver does not. A target whose root can't be resolved to a
+plain variable (a call result, for instance) is skipped rather than guessed at,
+keeping the check near-zero-false-positive — so it is on by default.
+
+##### Example diagnostics
+
+```
+workflow.go:10  mutates package-level variable counter from workflow code; shared mutable state breaks replay determinism and races across workflow executions (global-mutation)
+```
+
+The message ends with `(global-mutation)`, and golangci-lint then appends the
+linter name `(temporalcheck)`.
+
+#### Settings
+
+| Key        | Type | Default | Description                                          |
+|------------|------|---------|------------------------------------------------------|
+| `disabled` | bool | `false` | Turn the `workflowstate` analyzer off entirely        |
+
+#### Limitations
+
+- **Direct mutation only — no call graph.** A global mutated inside a helper that
+  does *not* take `workflow.Context` but is called from a workflow is not flagged;
+  detecting that needs the transitive analysis (and false positives) that
+  `workflowcheck` already carries. The trade is intentional: near-zero false
+  positives over completeness.
+- **Mutation, not reads.** Reading a package-level variable is not flagged —
+  reading immutable config is usually fine; only writes are the unambiguous
+  hazard.
+- **Receivers are not globals.** A workflow defined as a method can mutate its
+  receiver's fields; that is shared state too, but the receiver is a parameter, so
+  it is out of this check's "package-level variable" scope and not flagged.
+- **Unresolvable roots are skipped.** A target rooted at a call result or any
+  expression that does not resolve to a plain variable is left alone rather than
+  risked as a false positive.
+
 ## Development
 
 ```bash
@@ -1077,12 +1171,26 @@ temporalcheck-lint/
 │   │   ├── sensitiveargs_internal_test.go
 │   │   ├── nolint_internal_test.go
 │   │   └── testdata/             # self-contained fixture module
-│   └── optionscontext/           # flag Execute* calls fed a conflicting With*Options context
-│       ├── optionscontext.go     # settings, analyzer, statement-flow walk
-│       ├── check.go              # With*/Execute* matching + conflict report
+│   ├── optionscontext/           # flag Execute* calls fed a conflicting With*Options context
+│   │   ├── optionscontext.go     # settings, analyzer, statement-flow walk
+│   │   ├── check.go              # With*/Execute* matching + conflict report
+│   │   ├── nolint.go             # //nolint directive suppression
+│   │   ├── optionscontext_test.go # analysistest
+│   │   ├── optionscontext_internal_test.go
+│   │   └── testdata/             # self-contained fixture module
+│   ├── workeroptions/            # flag worker.Options boot-panic + missing concurrency limits
+│   │   ├── workeroptions.go      # settings, analyzer, literal dispatch
+│   │   ├── check.go              # worker.New/Options matching + field rules
+│   │   ├── nolint.go             # //nolint directive suppression
+│   │   ├── workeroptions_test.go # analysistest
+│   │   ├── workeroptions_internal_test.go
+│   │   └── testdata/             # self-contained fixture module
+│   └── workflowstate/            # flag package-level variable mutation from workflow code
+│       ├── workflowstate.go      # settings, analyzer, workflow-scope walk
+│       ├── check.go              # workflow-context detection + root-object resolution
 │       ├── nolint.go             # //nolint directive suppression
-│       ├── optionscontext_test.go # analysistest
-│       ├── optionscontext_internal_test.go
+│       ├── workflowstate_test.go # analysistest
+│       ├── workflowstate_internal_test.go
 │       └── testdata/             # self-contained fixture module
 ├── conformance/                  # CI-only module: real-SDK contract test (see below)
 ├── .custom-gcl.yml               # custom golangci-lint build config

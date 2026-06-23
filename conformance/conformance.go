@@ -67,6 +67,22 @@ var (
 	_ func(converter.EncodedValue, interface{}) error                         = converter.EncodedValue.Get
 )
 
+// workflowstate identifies a workflow definition by its leading workflow.Context
+// parameter and treats the closures nested in it -- workflow.Go coroutines, Await
+// conditions and Selector callbacks -- as workflow code too. The analyzer matches
+// the context type (exercised above), not these functions; these assignments are
+// a stub-fidelity guard, so the testdata/temporalsdk stub keeps mirroring the
+// real SDK shape that the fixtures rely on, and stop compiling if it drifts.
+var selector workflow.Selector
+
+var (
+	_ func(workflow.Context, func(workflow.Context))                 = workflow.Go
+	_ func(workflow.Context, func() bool) error                      = workflow.Await
+	_ func(workflow.Context) workflow.Selector                       = workflow.NewSelector
+	_ func(workflow.Future, func(workflow.Future)) workflow.Selector = selector.AddFuture
+	_ func(workflow.Context)                                         = selector.Select
+)
+
 // execargs/stringtarget/lossynumber/nonserializable resolve the workflow target of the
 // client.Client entry points: ExecuteWorkflow read as (ctx, options, target,
 // args...) and SignalWithStartWorkflow read as (ctx, id, signalName, signalArg,

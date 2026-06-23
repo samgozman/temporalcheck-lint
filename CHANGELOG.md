@@ -184,6 +184,23 @@ Initial proof of concept.
     satisfies it; only the literal passed directly to `worker.New` is inspected (a
     variable argument is skipped). Tagged `(require-options)`.
   - Turn the analyzer off entirely (both rules) via `workeroptions.disabled`.
+- `workflowstate` analyzer (on by default): flags mutation of a **package-level
+  variable** from workflow code — an assignment, `++`/`--`, or compound assignment
+  whose root object resolves (through field, index, pointer or parenthesis) to a
+  variable declared at package scope, in this package or another. Shared mutable
+  state breaks replay determinism and races across the concurrent workflow
+  executions a worker runs, so it is essentially never legitimate. This is the
+  gap Temporal's own `workflowcheck` documents it does not cover ("this will not
+  catch all cases of non-determinism such as global var mutation"). Workflow code
+  is any function whose first parameter is `workflow.Context`, including the
+  closures nested in it (`workflow.Go` coroutines, `Await` conditions, `Selector`
+  callbacks). The **idiomatic capture-and-mutate of a local** from such a closure
+  — the SDK's documented way to move data between deterministic coroutines — is
+  deliberately **not** flagged: the discriminator is the variable's scope
+  (package-level fires; a local, parameter or receiver does not), and a target
+  whose root cannot be resolved to a plain variable is skipped rather than
+  guessed at. Tagged `(global-mutation)`; turn it off via
+  `workflowstate.disabled`.
 - Hermetic, offline `analysistest` fixtures: `testdata/` is a self-contained
   module that resolves `go.temporal.io/sdk` via a local stub, so it resolves in
   IDEs without pulling the real SDK.
@@ -191,5 +208,6 @@ Initial proof of concept.
   real Temporal SDK in CI, catching any drift between the stub and the SDK's
   `Execute*`, `workflow.NewContinueAsNewError`, `client.ExecuteWorkflow`,
   `client.SignalWithStartWorkflow`, `testsuite` `OnActivity`/`OnWorkflow`,
-  `With*Options`, `Future`/`ChildWorkflowFuture`/`EncodedValue` `.Get`, and
-  `worker.New`/`worker.Options` signatures.
+  `With*Options`, `Future`/`ChildWorkflowFuture`/`EncodedValue` `.Get`,
+  `worker.New`/`worker.Options`, and the `workflow.Go`/`Await`/`NewSelector`/
+  `Selector` coroutine entry points signatures.

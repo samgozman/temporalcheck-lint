@@ -109,3 +109,10 @@ linters:
             # the SDK defaults (1k executions, 100k/s) that can overload a self-hosted
             # cluster (default false).
             require-options: true
+          workflowstate:
+            # Flag mutation of a package-level variable from workflow code (an
+            # assignment or ++/-- whose root is a package-scope var) -- shared state
+            # that breaks replay determinism and races across workflow executions.
+            # The idiomatic capture-and-mutate of a local from a workflow.Go/Await/
+            # Selector closure is not flagged. On by default; set true to turn it off.
+            disabled: false

@@ -18,6 +18,7 @@ import (
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/sensitiveargs"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/stringtarget"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/workeroptions"
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/workflowstate"
 )
 
 func init() {
@@ -39,6 +40,7 @@ type Settings struct {
 	SensitiveArgs   SensitiveArgsSettings   `json:"sensitiveargs"`
 	OptionsContext  OptionsContextSettings  `json:"optionscontext"`
 	WorkerOptions   WorkerOptionsSettings   `json:"workeroptions"`
+	WorkflowState   WorkflowStateSettings   `json:"workflowstate"`
 }
 
 // ExecargsSettings configures the execargs analyzer. Pointers distinguish
@@ -210,6 +212,17 @@ type WorkerOptionsSettings struct {
 	RequireOptions *bool `json:"require-options"`
 }
 
+// WorkflowStateSettings configures the workflowstate analyzer, which flags
+// mutation of a package-level variable from workflow code -- shared state that
+// breaks replay determinism and races across concurrent workflow executions.
+type WorkflowStateSettings struct {
+	// Disabled turns the analyzer off entirely (default false). The check is on by
+	// default: it fires only on a resolved mutation of a package-level variable
+	// (never on the idiomatic capture-and-mutate of a local), which is never a
+	// legitimate thing to do from a workflow, so there is nothing to opt into.
+	Disabled *bool `json:"disabled"`
+}
+
 type plugin struct {
 	settings Settings
 }
@@ -301,6 +314,10 @@ func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 	if p.settings.WorkerOptions.RequireOptions != nil {
 		workerOptionsRequireOptions = *p.settings.WorkerOptions.RequireOptions
 	}
+	workflowStateDisabled := false
+	if p.settings.WorkflowState.Disabled != nil {
+		workflowStateDisabled = *p.settings.WorkflowState.Disabled
+	}
 	return []*analysis.Analyzer{
 		execargs.NewAnalyzer(execargs.Settings{
 			Disabled:       disabled,
@@ -342,6 +359,9 @@ func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 		workeroptions.NewAnalyzer(workeroptions.Settings{
 			Disabled:       workerOptionsDisabled,
 			RequireOptions: workerOptionsRequireOptions,
+		}),
+		workflowstate.NewAnalyzer(workflowstate.Settings{
+			Disabled: workflowStateDisabled,
 		}),
 		// Future Temporal analyzers (e.g. registration coverage, retry-policy
 		// sanity, non-determinism heuristics) plug in here.
