@@ -19,6 +19,7 @@ package workeroptions
 import (
 	"go/ast"
 
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/internal/nolint"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -61,7 +62,7 @@ func (c *checker) run(pass *analysis.Pass) (any, error) {
 		return nil, nil
 	}
 	for _, file := range pass.Files {
-		nolint := collectNolint(pass.Fset, file)
+		nolint := nolint.Collect(pass.Fset, file)
 		ast.Inspect(file, func(n ast.Node) bool {
 			switch node := n.(type) {
 			case *ast.CompositeLit:

@@ -4,6 +4,8 @@ import (
 	"go/ast"
 	"go/types"
 
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/internal/nolint"
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/internal/temporalsdk"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -13,26 +15,20 @@ import (
 // resolves through go/types to the internal named type. EncodedValue is declared
 // directly in converter. We match by package path + name through go/types --
 // never importing the SDK -- so aliased imports resolve the same way.
-const (
-	workflowPkg  = "go.temporal.io/sdk/workflow"
-	internalPkg  = "go.temporal.io/sdk/internal"
-	converterPkg = "go.temporal.io/sdk/converter"
-)
-
 // receiverTypes maps the matched receiver type name to the SDK package paths it
 // may surface from. Future/ChildWorkflowFuture resolve to internal but may also
 // appear as the workflow alias depending on how the type checker reports them;
 // accepting both paths covers gotypesalias on or off. EncodedValue lives only in
 // converter. Adding another result type is a single row.
 var receiverTypes = map[string][]string{
-	"Future":              {workflowPkg, internalPkg},
-	"ChildWorkflowFuture": {workflowPkg, internalPkg},
-	"EncodedValue":        {converterPkg},
+	"Future":              {temporalsdk.WorkflowPkg, temporalsdk.InternalPkg},
+	"ChildWorkflowFuture": {temporalsdk.WorkflowPkg, temporalsdk.InternalPkg},
+	"EncodedValue":        {temporalsdk.ConverterPkg},
 }
 
 // checkDiscarded reports call when it is a .Get on one of the Temporal receiver
 // types whose returned error is being thrown away, after honoring //nolint.
-func (c *checker) checkDiscarded(pass *analysis.Pass, nolint nolintInfo, call *ast.CallExpr) {
+func (c *checker) checkDiscarded(pass *analysis.Pass, nolint nolint.Info, call *ast.CallExpr) {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok || sel.Sel.Name != "Get" {
 		return
@@ -49,7 +45,7 @@ func (c *checker) checkDiscarded(pass *analysis.Pass, nolint nolintInfo, call *a
 	// Honor //nolint directives ourselves so suppression works the same way in
 	// standalone/analysistest runs, not only under golangci-lint. Checked after
 	// confirming this is a call we flag, so unrelated calls cost nothing.
-	if nolint.suppressesCall(pass.Fset, call) {
+	if nolint.Suppresses(pass.Fset, call) {
 		return
 	}
 

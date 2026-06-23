@@ -1,6 +1,7 @@
 package activitytimeout
 
 import (
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/internal/temporalsdk"
 	"go/ast"
 	"go/types"
 )
@@ -10,11 +11,6 @@ import (
 // mirroring workflow.Context. We match by path through go/types -- resolving the
 // alias to its internal definition -- so aliased imports resolve and we never
 // import the SDK.
-const (
-	workflowPkg = "go.temporal.io/sdk/workflow"
-	internalPkg = "go.temporal.io/sdk/internal"
-)
-
 // The two timeout fields the checks reason about. Both ActivityOptions and
 // LocalActivityOptions carry them.
 const (
@@ -43,7 +39,7 @@ func optionTypeName(t types.Type) (string, bool) {
 		return "", false
 	}
 	switch obj.Pkg().Path() {
-	case workflowPkg, internalPkg:
+	case temporalsdk.WorkflowPkg, temporalsdk.InternalPkg:
 		// The type lives in one of the SDK packages we match; check the name below.
 	default:
 		return "", false

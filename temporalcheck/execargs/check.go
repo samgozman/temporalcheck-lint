@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/internal/temporalsdk"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -285,7 +286,7 @@ func driftPhrase(d structDiff) string {
 }
 
 func pointerInsensitiveMatch(got, want types.Type) bool {
-	if types.AssignableTo(deref(got), deref(want)) {
+	if types.AssignableTo(temporalsdk.Deref(got), temporalsdk.Deref(want)) {
 		return true
 	}
 	gs, gok := got.Underlying().(*types.Slice)
@@ -294,14 +295,6 @@ func pointerInsensitiveMatch(got, want types.Type) bool {
 		return pointerInsensitiveMatch(gs.Elem(), ws.Elem())
 	}
 	return false
-}
-
-// deref strips one level of pointer indirection, leaving non-pointers untouched.
-func deref(t types.Type) types.Type {
-	if p, ok := t.Underlying().(*types.Pointer); ok {
-		return p.Elem()
-	}
-	return t
 }
 
 // skipCount returns how many leading parameters Temporal injects at run time and
@@ -313,29 +306,15 @@ func skipCount(sig *types.Signature, k kind) int {
 	first := sig.Params().At(0).Type()
 	switch k {
 	case kindWorkflow:
-		if isWorkflowContext(first) {
+		if temporalsdk.IsWorkflowContext(first) {
 			return 1
 		}
 	case kindActivity:
-		if named(first, contextPkg, "Context") {
+		if temporalsdk.Named(first, temporalsdk.ContextPkg, "Context") {
 			return 1
 		}
 	}
 	return 0
-}
-
-// isWorkflowContext reports whether t is workflow.Context. The SDK publishes it
-// as `type Context = internal.Context`, so depending on the gotypesalias mode t
-// is either the alias (named in workflowPkg) or the resolved internal named type
-// (named in workflowInternalPkg); both must count as the injected context.
-func isWorkflowContext(t types.Type) bool {
-	// The resolved type lives in the internal package (or the workflow package
-	// itself, for a direct declaration like the test stub once used).
-	if named(types.Unalias(t), workflowInternalPkg, "Context") {
-		return true
-	}
-	// The unresolved alias is named in the public workflow package.
-	return named(t, workflowPkg, "Context")
 }
 
 func argWord(n int) string {
@@ -354,33 +333,6 @@ func targetName(expr ast.Expr) string {
 	default:
 		return "target"
 	}
-}
-
-// isReceiver reports whether fn is a method whose receiver is (a pointer to) the
-// named type pkgPath.name -- used to confirm a mock-setup method belongs to
-// testsuite's TestWorkflowEnvironment.
-func isReceiver(fn *types.Func, pkgPath, name string) bool {
-	sig, ok := fn.Type().(*types.Signature)
-	if !ok || sig.Recv() == nil {
-		return false
-	}
-	return named(deref(sig.Recv().Type()), pkgPath, name)
-}
-
-// named reports whether t is the named type pkgPath.name. It accepts both
-// defined types and aliases, since both carry an *types.TypeName.
-func named(t types.Type, pkgPath, name string) bool {
-	var obj *types.TypeName
-	switch n := t.(type) {
-	case *types.Named:
-		obj = n.Obj()
-	case *types.Alias:
-		obj = n.Obj()
-	default:
-		return false
-	}
-	return obj != nil && obj.Pkg() != nil &&
-		obj.Pkg().Path() == pkgPath && obj.Name() == name
 }
 
 // typeStr renders a type using short package names (context.Context, not the

@@ -4,6 +4,7 @@ import (
 	"go/ast"
 	"go/types"
 
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/internal/temporalsdk"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -60,7 +61,7 @@ func (wc *walkCtx) withKind(expr ast.Expr) (kind, *types.Var, bool) {
 		return 0, nil, false
 	}
 	fn := wc.calleeFunc(call)
-	if fn == nil || fn.Pkg() == nil || fn.Pkg().Path() != workflowPkg {
+	if fn == nil || fn.Pkg() == nil || fn.Pkg().Path() != temporalsdk.WorkflowPkg {
 		return 0, nil, false
 	}
 	k, ok := withFuncs[fn.Name()]
@@ -78,7 +79,7 @@ func (wc *walkCtx) withKind(expr ast.Expr) (kind, *types.Var, bool) {
 // option kind it reads out of the context it receives.
 func (wc *walkCtx) executeKind(call *ast.CallExpr) (kind, bool) {
 	fn := wc.calleeFunc(call)
-	if fn == nil || fn.Pkg() == nil || fn.Pkg().Path() != workflowPkg {
+	if fn == nil || fn.Pkg() == nil || fn.Pkg().Path() != temporalsdk.WorkflowPkg {
 		return 0, false
 	}
 	k, ok := executeFuncs[fn.Name()]
@@ -130,7 +131,7 @@ func (wc *walkCtx) checkConflict(call *ast.CallExpr, needed kind, st *state) {
 	// Honor //nolint ourselves so suppression works the same way in
 	// standalone/analysistest runs, not only under golangci-lint. Checked after
 	// confirming a real conflict, so unrelated calls cost nothing.
-	if wc.nolint.suppressesCall(wc.pass.Fset, call) {
+	if wc.nolint.Suppresses(wc.pass.Fset, call) {
 		return
 	}
 

@@ -23,21 +23,13 @@ import (
 	"go/types"
 	"strconv"
 
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/internal/nolint"
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/internal/temporalsdk"
 	"golang.org/x/tools/go/analysis"
 )
 
 const (
-	workflowPkg = "go.temporal.io/sdk/workflow"
-	// clientPkg is where the SDK declares the Client interface directly (unlike the
-	// aliased testsuite type), so client.ExecuteWorkflow / SignalWithStartWorkflow
-	// resolve with receiver client.Client.
-	clientPkg = "go.temporal.io/sdk/client"
-	// workflowInternalPkg is where the SDK declares the testsuite types. The
-	// testsuite package re-publishes TestWorkflowEnvironment as an alias, so a
-	// resolved OnActivity/OnWorkflow method's receiver lives here. internalPkg.Client
-	// is a separate interface client.Client implements; we accept it too, defensively.
-	workflowInternalPkg = "go.temporal.io/sdk/internal"
-	testEnvType         = "TestWorkflowEnvironment"
+	testEnvType = "TestWorkflowEnvironment"
 	// tagStringTarget suffixes the production-call diagnostic so it is clear which
 	// check produced it.
 	tagStringTarget = "string-target"
@@ -115,7 +107,7 @@ func (c *checker) run(pass *analysis.Pass) (any, error) {
 		return nil, nil
 	}
 	for _, file := range pass.Files {
-		nolint := collectNolint(pass.Fset, file)
+		nolint := nolint.Collect(pass.Fset, file)
 		ast.Inspect(file, func(n ast.Node) bool {
 			if call, ok := n.(*ast.CallExpr); ok {
 				c.checkCall(pass, nolint, call)
@@ -126,7 +118,7 @@ func (c *checker) run(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
-func (c *checker) checkCall(pass *analysis.Pass, nolint nolintInfo, call *ast.CallExpr) {
+func (c *checker) checkCall(pass *analysis.Pass, nolint nolint.Info, call *ast.CallExpr) {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
 		return
@@ -149,7 +141,7 @@ func (c *checker) checkCall(pass *analysis.Pass, nolint nolintInfo, call *ast.Ca
 		return
 	}
 	// Shape is (target, matchers...): the test-mock target is the first argument.
-	if c.strictTests && testEntryPoints[fn.Name()] && isReceiver(fn, workflowInternalPkg, testEnvType) {
+	if c.strictTests && testEntryPoints[fn.Name()] && temporalsdk.IsReceiver(fn, temporalsdk.InternalPkg, testEnvType) {
 		c.report(pass, nolint, call, fn.Name(), call.Args[0], tagStrictTests)
 	}
 }
@@ -160,12 +152,12 @@ func (c *checker) checkCall(pass *analysis.Pass, nolint nolintInfo, call *ast.Ca
 // declares them on the client.Client interface rather than in a package we can
 // match by path.
 func targetIndex(fn *types.Func) (int, bool) {
-	if fn.Pkg().Path() == workflowPkg {
+	if fn.Pkg().Path() == temporalsdk.WorkflowPkg {
 		idx, ok := workflowEntries[fn.Name()]
 		return idx, ok
 	}
 	if idx, ok := clientEntries[fn.Name()]; ok &&
-		(isReceiver(fn, clientPkg, "Client") || isReceiver(fn, workflowInternalPkg, "Client")) {
+		(temporalsdk.IsReceiver(fn, temporalsdk.ClientPkg, "Client") || temporalsdk.IsReceiver(fn, temporalsdk.InternalPkg, "Client")) {
 		return idx, true
 	}
 	return 0, false
@@ -173,11 +165,11 @@ func targetIndex(fn *types.Func) (int, bool) {
 
 // report flags target when it is named by string, after honoring //nolint. The
 // tag distinguishes a production Execute* call from a testsuite mock setup.
-func (c *checker) report(pass *analysis.Pass, nolint nolintInfo, call *ast.CallExpr, entry string, target ast.Expr, tag string) {
+func (c *checker) report(pass *analysis.Pass, nolint nolint.Info, call *ast.CallExpr, entry string, target ast.Expr, tag string) {
 	// Honor //nolint directives ourselves so suppression works the same way in
 	// standalone/analysistest runs, not only under golangci-lint. Checked after
 	// confirming this is a call we inspect, so unrelated calls cost nothing.
-	if nolint.suppressesCall(pass.Fset, call) {
+	if nolint.Suppresses(pass.Fset, call) {
 		return
 	}
 	if !isStringType(pass.TypesInfo.TypeOf(target)) {
@@ -193,27 +185,6 @@ func (c *checker) report(pass *analysis.Pass, nolint nolintInfo, call *ast.CallE
 	pass.Reportf(target.Pos(),
 		"%s: %s is named by string; pass the function reference instead so its arguments can be checked statically (%s)",
 		entry, subject, tag)
-}
-
-// isReceiver reports whether fn is a method whose receiver is (a pointer to) the
-// named type pkgPath.name -- used to confirm a mock-setup method belongs to
-// testsuite's TestWorkflowEnvironment.
-func isReceiver(fn *types.Func, pkgPath, name string) bool {
-	sig, ok := fn.Type().(*types.Signature)
-	if !ok || sig.Recv() == nil {
-		return false
-	}
-	t := sig.Recv().Type()
-	if p, ok := t.Underlying().(*types.Pointer); ok {
-		t = p.Elem()
-	}
-	n, ok := t.(*types.Named)
-	if !ok {
-		return false
-	}
-	obj := n.Obj()
-	return obj != nil && obj.Pkg() != nil &&
-		obj.Pkg().Path() == pkgPath && obj.Name() == name
 }
 
 // isStringType reports whether t is a string -- the typed string, an untyped

@@ -7,4 +7,4 @@ go 1.23.0
 
 require go.temporal.io/sdk v0.0.0
 
-replace go.temporal.io/sdk => ./temporalsdk
+replace go.temporal.io/sdk => ../../internal/sdkstub

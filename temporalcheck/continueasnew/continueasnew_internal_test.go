@@ -1,6 +1,7 @@
 package continueasnew
 
 import (
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/internal/temporalsdk"
 	"go/ast"
 	"go/token"
 	"go/types"
@@ -48,9 +49,9 @@ func TestIsContinueAsNewError(t *testing.T) {
 		want bool
 	}{
 		{"nil func", nil, false},
-		{"workflow.NewContinueAsNewError", funcIn(workflowPkg, funcName), true},
+		{"workflow.NewContinueAsNewError", funcIn(temporalsdk.WorkflowPkg, funcName), true},
 		{"right name, wrong package", funcIn("example.com/other", funcName), false},
-		{"right package, wrong name", funcIn(workflowPkg, "ExecuteActivity"), false},
+		{"right package, wrong name", funcIn(temporalsdk.WorkflowPkg, "ExecuteActivity"), false},
 		{"matching name, nil package", noPkg(funcName), false},
 	}
 

@@ -23,11 +23,12 @@ import (
 	"go/token"
 	"go/types"
 
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/internal/nolint"
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/internal/temporalsdk"
 	"golang.org/x/tools/go/analysis"
 )
 
 const (
-	workflowPkg = "go.temporal.io/sdk/workflow"
 	// tagOptionsDiscard suffixes the diagnostic so it is clear which check
 	// produced it.
 	tagOptionsDiscard = "options-discard"
@@ -74,7 +75,7 @@ func (c *checker) run(pass *analysis.Pass) (any, error) {
 		return nil, nil
 	}
 	for _, file := range pass.Files {
-		nolint := collectNolint(pass.Fset, file)
+		nolint := nolint.Collect(pass.Fset, file)
 		ast.Inspect(file, func(n ast.Node) bool {
 			switch s := n.(type) {
 			case *ast.ExprStmt:
@@ -101,7 +102,7 @@ func (c *checker) run(pass *analysis.Pass) (any, error) {
 
 // checkDiscarded reports call when it is a With*Options entry point whose result
 // is being thrown away, after honoring //nolint.
-func (c *checker) checkDiscarded(pass *analysis.Pass, nolint nolintInfo, call *ast.CallExpr) {
+func (c *checker) checkDiscarded(pass *analysis.Pass, nolint nolint.Info, call *ast.CallExpr) {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
 		return
@@ -113,14 +114,14 @@ func (c *checker) checkDiscarded(pass *analysis.Pass, nolint nolintInfo, call *a
 	if !ok || fn.Pkg() == nil {
 		return
 	}
-	if fn.Pkg().Path() != workflowPkg || !entryPoints[fn.Name()] {
+	if fn.Pkg().Path() != temporalsdk.WorkflowPkg || !entryPoints[fn.Name()] {
 		return
 	}
 
 	// Honor //nolint directives ourselves so suppression works the same way in
 	// standalone/analysistest runs, not only under golangci-lint. Checked after
 	// confirming this is a call we flag, so unrelated calls cost nothing.
-	if nolint.suppressesCall(pass.Fset, call) {
+	if nolint.Suppresses(pass.Fset, call) {
 		return
 	}
 

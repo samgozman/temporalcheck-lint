@@ -12,21 +12,9 @@ import (
 	"go/ast"
 	"go/types"
 
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/internal/nolint"
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/internal/temporalsdk"
 	"golang.org/x/tools/go/analysis"
-)
-
-const (
-	workflowPkg = "go.temporal.io/sdk/workflow"
-	// clientPkg is where the SDK declares the Client interface directly (unlike the
-	// aliased Context type), so client.ExecuteWorkflow / SignalWithStartWorkflow
-	// resolve with receiver client.Client. internalPkg.Client is a separate interface
-	// client.Client implements; we accept it too, defensively.
-	clientPkg = "go.temporal.io/sdk/client"
-	// workflowInternalPkg is where the SDK actually declares the workflow types.
-	// workflow.Context is published as `type Context = internal.Context`, so the
-	// resolved named type lives here, not in workflowPkg.
-	workflowInternalPkg = "go.temporal.io/sdk/internal"
-	contextPkg          = "context"
 )
 
 // Settings configures the execargs analyzer. The three checks below are
@@ -111,12 +99,12 @@ var clientEntries = map[string]entry{
 // receiver, since the SDK declares them on client.Client rather than in a package
 // we can match by path.
 func entryFor(fn *types.Func) (entry, bool) {
-	if fn.Pkg().Path() == workflowPkg {
+	if fn.Pkg().Path() == temporalsdk.WorkflowPkg {
 		e, ok := workflowEntries[fn.Name()]
 		return e, ok
 	}
 	if e, ok := clientEntries[fn.Name()]; ok &&
-		(isReceiver(fn, clientPkg, "Client") || isReceiver(fn, workflowInternalPkg, "Client")) {
+		(temporalsdk.IsReceiver(fn, temporalsdk.ClientPkg, "Client") || temporalsdk.IsReceiver(fn, temporalsdk.InternalPkg, "Client")) {
 		return e, true
 	}
 	return entry{}, false
@@ -124,7 +112,7 @@ func entryFor(fn *types.Func) (entry, bool) {
 
 // testEnvType is the testsuite type whose mock-setup methods StrictTests checks.
 // The SDK declares it in the internal package and re-publishes it from testsuite
-// as an alias, so the resolved method's receiver lives in workflowInternalPkg.
+// as an alias, so the resolved method's receiver lives in temporalsdk.InternalPkg.
 const testEnvType = "TestWorkflowEnvironment"
 
 // testEntryPoints maps the TestWorkflowEnvironment mock-setup methods to the noun
@@ -173,7 +161,7 @@ func (c *checker) run(pass *analysis.Pass) (any, error) {
 		return nil, nil
 	}
 	for _, file := range pass.Files {
-		nolint := collectNolint(pass.Fset, file)
+		nolint := nolint.Collect(pass.Fset, file)
 		ast.Inspect(file, func(n ast.Node) bool {
 			if call, ok := n.(*ast.CallExpr); ok {
 				c.checkCall(pass, nolint, call)
@@ -184,7 +172,7 @@ func (c *checker) run(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
-func (c *checker) checkCall(pass *analysis.Pass, nolint nolintInfo, call *ast.CallExpr) {
+func (c *checker) checkCall(pass *analysis.Pass, nolint nolint.Info, call *ast.CallExpr) {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
 		return
@@ -200,16 +188,16 @@ func (c *checker) checkCall(pass *analysis.Pass, nolint nolintInfo, call *ast.Ca
 		c.checkExecuteCall(pass, nolint, call, fn, e)
 		return
 	}
-	if c.strictTests && fn.Pkg().Path() == workflowInternalPkg {
+	if c.strictTests && fn.Pkg().Path() == temporalsdk.InternalPkg {
 		c.checkTestCall(pass, nolint, call, fn)
 	}
 }
 
-func (c *checker) checkExecuteCall(pass *analysis.Pass, nolint nolintInfo, call *ast.CallExpr, fn *types.Func, e entry) {
+func (c *checker) checkExecuteCall(pass *analysis.Pass, nolint nolint.Info, call *ast.CallExpr, fn *types.Func, e entry) {
 	// Honor //nolint directives ourselves so suppression works the same way it
 	// does in standalone/analysistest runs, not only under golangci-lint. Checked
 	// after confirming this is an entry-point call, so unrelated calls cost nothing.
-	if nolint.suppressesCall(pass.Fset, call) {
+	if nolint.Suppresses(pass.Fset, call) {
 		return
 	}
 
@@ -238,15 +226,15 @@ func (c *checker) checkExecuteCall(pass *analysis.Pass, nolint nolintInfo, call 
 // setup -- OnActivity/OnWorkflow. The matchers must cover every declared
 // parameter, so there is no injected context to skip (the way Execute* does);
 // the count is simply the target's parameter count.
-func (c *checker) checkTestCall(pass *analysis.Pass, nolint nolintInfo, call *ast.CallExpr, fn *types.Func) {
+func (c *checker) checkTestCall(pass *analysis.Pass, nolint nolint.Info, call *ast.CallExpr, fn *types.Func) {
 	// Confirm the method is OnActivity/OnWorkflow on testsuite's
 	// TestWorkflowEnvironment, so an unrelated internal method -- e.g. the
 	// MockCallWrapper.Return/Once chained after the setup -- can't match.
 	noun, ok := testEntryPoints[fn.Name()]
-	if !ok || !isReceiver(fn, workflowInternalPkg, testEnvType) {
+	if !ok || !temporalsdk.IsReceiver(fn, temporalsdk.InternalPkg, testEnvType) {
 		return
 	}
-	if nolint.suppressesCall(pass.Fset, call) {
+	if nolint.Suppresses(pass.Fset, call) {
 		return
 	}
 

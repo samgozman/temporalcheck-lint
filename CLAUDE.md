@@ -29,29 +29,45 @@ runs `golangci-lint custom`); `make test`/`vet`/`cover-check` need only Go.
 
 Run a single test: `go test -race -run TestExecArgs_StrictPointers ./temporalcheck/execargs/`.
 
-The `testdata/` and `conformance/` directories are **separate Go modules**, so
-`./...` from the root never touches them; `analysistest` loads `testdata/` itself.
+The `testdata/`, `conformance/`, and `temporalcheck/internal/sdkstub/` directories
+are **separate Go modules**, so `./...` from the root never touches them;
+`analysistest` loads each analyzer's `testdata/` itself.
 
 ## Architecture
 
-The plugin is a thin registration shell around **one analyzer per check**:
+The plugin is a thin registration shell around **one analyzer per check**, with
+cross-cutting infrastructure factored into shared `internal/` packages:
 
 - `temporalcheck/plugin.go` — `register.Plugin("temporalcheck", New)`, maps the
   `.golangci.yml` `settings:` block onto each analyzer, and lists analyzers in
   `BuildAnalyzers`. `GetLoadMode` returns `LoadModeTypesInfo` — every analyzer gets
   full type information.
-- `temporalcheck/execargs/` — the first analyzer, in its own package.
+- `temporalcheck/execargs/` (and its siblings) — one analyzer per package, holding
+  only that check's **domain logic**.
+- `temporalcheck/internal/` — code genuinely shared by every analyzer, so it is not
+  copied into each:
+  - `nolint/` — `//nolint` directive parsing and suppression (`Collect` +
+    `Info.Suppresses`). The suppression set is identical for every analyzer
+    (golangci-lint knows the whole plugin as `temporalcheck`), so it lives here once.
+  - `temporalsdk/` — the SDK import-path constants (`WorkflowPkg`, `InternalPkg`,
+    `ClientPkg`, …) and the pure `go/types` matchers (`Named`, `IsWorkflowContext`,
+    `IsReceiver`, `Deref`, `SkipCount`) that recognize the SDK.
+  - `workflowscope/` — locating workflow definitions (`IsWorkflowFunc`, `FuncBody`,
+    `Walk`), used by the determinism checks (workflowlogger, workflowstate).
+  - `sdkstub/` — the single shared SDK stub module the fixtures resolve to (below).
 
 Settings use a per-analyzer nested block (`settings.execargs.*`) so analyzers added
 later don't collide in a flat namespace. In `plugin.go`, settings fields are
 `*bool` (unset vs explicit false) and are flattened to plain `bool` before being
 handed to `NewAnalyzer`.
 
-The analyzer **never imports the Temporal SDK** — it matches calls by package path
+The analyzers **never import the Temporal SDK** — they match calls by package path
 (`go.temporal.io/sdk/workflow`) through `go/types`, resolving via
 `pass.TypesInfo.Uses` so aliased imports still match. The SDK only appears in test
-fixtures via a local stub (`testdata/temporalsdk/`), and the `conformance/` module
-asserts at compile time that the stub still matches the real SDK's signatures.
+fixtures via one shared local stub (`temporalcheck/internal/sdkstub/`, a separate
+module pulled in by each `testdata/go.mod` via `replace go.temporal.io/sdk =>
+../../internal/sdkstub`), and the `conformance/` module asserts at compile time that
+the stub still matches the real SDK's signatures.
 
 ### Gotcha: the SDK re-exports option/config *types* as aliases from `internal`
 
@@ -67,14 +83,16 @@ any analyzer that matches an option **type** (not a function):
   + a `…/workflow` path check both fail. Call `types.Unalias(t)` first and accept
   **both** the `workflow` and `internal` package paths (see `activitytimeout/check.go`
   `optionTypeName`).
-- `execargs`/`optionsdiscard`/`stringtarget` only match *functions*
-  (`ExecuteActivity`, `WithActivityOptions`), which live directly in `workflow` and
-  are not aliased — so their stubs declare the option structs right in the stub
-  `workflow` package and `analysistest` passes. A type-matching analyzer that copies
-  that stub gets **false-green tests** but reports nothing against the real SDK. Make
-  its stub mirror the real shape: declare the struct in stub `internal`, alias it from
-  stub `workflow`. `conformance/` can't guard this (Go forbids importing
-  `…/sdk/internal` from outside that module), so the stub is the only guard.
+- The shared stub (`internal/sdkstub/`) mirrors the real shape: option/config and
+  future types are declared in stub `internal` and re-exported from the public stub
+  packages as aliases (`type ActivityOptions = internal.ActivityOptions`), exactly
+  as the SDK does. A type-matching analyzer that instead tested against a struct
+  declared directly in the public stub package would get **false-green tests** but
+  report nothing against the real SDK. `conformance/` can't guard this (Go forbids
+  importing `…/sdk/internal` from outside that module), so the stub is the only
+  guard — keep new SDK types in `sdkstub/internal` and alias them out. (Function-only
+  matchers like `execargs`/`optionsdiscard`/`stringtarget` are unaffected, since the
+  functions they match live directly in `workflow`.)
 - golangci-lint caches results and does **not** reliably invalidate on a plugin
   rebuild. When verifying a plugin change end-to-end, run `./bin/custom-gcl cache
   clean` after `make build`, or you'll chase stale "0 issues".
@@ -86,18 +104,22 @@ When adding a Temporal check, mirror this structure: a sibling package next to
 `BuildAnalyzers` with its own `*bool` settings on the `Settings` struct in
 `plugin.go`.
 
+Each analyzer owns its **domain logic**, but anything genuinely shared lives in the
+`internal/` packages rather than being copied — `//nolint` suppression
+(`internal/nolint`), SDK recognition (`internal/temporalsdk`), workflow discovery
+(`internal/workflowscope`), and the test stub (`internal/sdkstub`). Reach for those
+first; only add a new shared helper when two analyzers would otherwise duplicate it.
+
 Within the package, follow the same separation of concerns:
 
 - `execargs.go` — the `Settings` struct, `NewAnalyzer`, and the `checker` type that
   threads settings through the walk (no package-level mutable state). `run` walks
-  the AST and `checkCall` does call dispatch: confirm the callee, honor `//nolint`,
-  bail on shapes we can't resolve, then hand off.
-- `check.go` — the actual matching logic and pure helpers (signature comparison,
-  type rendering, etc.).
-- `nolint.go` — `//nolint` suppression, honored by the analyzer itself so it works
-  in standalone/`analysistest` runs, not only under golangci-lint. golangci-lint
-  exposes the plugin as **`temporalcheck`**, so that (or bare/`all`) is the name a
-  directive must use — not the analyzer name `execargs`.
+  the AST and `checkCall` does call dispatch: confirm the callee, honor `//nolint`
+  via `nolint.Collect`/`Info.Suppresses`, bail on shapes we can't resolve, then hand
+  off. (golangci-lint exposes the plugin as **`temporalcheck`**, so that, or
+  bare/`all`, is the name a `//nolint` directive must use — not the analyzer name.)
+- `check.go` — the actual matching logic and any pure helpers specific to this check
+  (the generic `go/types` matchers come from `internal/temporalsdk`).
 
 Design principles `execargs` establishes, worth keeping:
 

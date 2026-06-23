@@ -5,54 +5,15 @@ import (
 	"go/token"
 	"go/types"
 
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/internal/nolint"
 	"golang.org/x/tools/go/analysis"
 )
-
-// isWorkflowFunc reports whether a function with the given type is a Temporal
-// workflow definition: its first parameter is workflow.Context.
-func isWorkflowFunc(pass *analysis.Pass, ft *ast.FuncType) bool {
-	if ft == nil || ft.Params == nil || len(ft.Params.List) == 0 {
-		return false
-	}
-	// A field may declare several names sharing one type; the first parameter's
-	// type is that field's type regardless.
-	return isWorkflowContext(pass.TypesInfo.TypeOf(ft.Params.List[0].Type))
-}
-
-// isWorkflowContext reports whether t is workflow.Context. The SDK publishes it
-// as `type Context = internal.Context`, so depending on the gotypesalias mode t
-// is either the alias (named in workflowPkg) or the resolved internal named type
-// (named in workflowInternalPkg); both count.
-func isWorkflowContext(t types.Type) bool {
-	if t == nil {
-		return false
-	}
-	if named(types.Unalias(t), workflowInternalPkg, "Context") {
-		return true
-	}
-	return named(t, workflowPkg, "Context")
-}
-
-// named reports whether t is the named (or aliased) type pkgPath.name.
-func named(t types.Type, pkgPath, name string) bool {
-	var obj *types.TypeName
-	switch n := t.(type) {
-	case *types.Named:
-		obj = n.Obj()
-	case *types.Alias:
-		obj = n.Obj()
-	default:
-		return false
-	}
-	return obj != nil && obj.Pkg() != nil &&
-		obj.Pkg().Path() == pkgPath && obj.Name() == name
-}
 
 // reportMutations walks a workflow definition's body -- including the closures
 // lexically nested in it, since those run as part of the same workflow execution
 // -- and reports every assignment or ++/-- whose root object is a package-level
 // variable.
-func (c *checker) reportMutations(pass *analysis.Pass, nolint nolintInfo, body *ast.BlockStmt) {
+func (c *checker) reportMutations(pass *analysis.Pass, nolint nolint.Info, body *ast.BlockStmt) {
 	ast.Inspect(body, func(n ast.Node) bool {
 		switch s := n.(type) {
 		case *ast.AssignStmt:
@@ -74,7 +35,7 @@ func (c *checker) reportMutations(pass *analysis.Pass, nolint nolintInfo, body *
 // checkTarget reports a mutation when target's root object is a package-level
 // variable. stmt is the enclosing statement, used for diagnostic position and
 // //nolint suppression so a directive on that line works.
-func (c *checker) checkTarget(pass *analysis.Pass, nolint nolintInfo, stmt ast.Node, target ast.Expr) {
+func (c *checker) checkTarget(pass *analysis.Pass, nolint nolint.Info, stmt ast.Node, target ast.Expr) {
 	v := rootVar(pass, target)
 	if v == nil || !isPackageVar(v) {
 		return
@@ -82,7 +43,7 @@ func (c *checker) checkTarget(pass *analysis.Pass, nolint nolintInfo, stmt ast.N
 	// Honor //nolint ourselves so suppression works the same way in
 	// standalone/analysistest runs, not only under golangci-lint. Checked after
 	// confirming a real mutation, so unrelated statements cost nothing.
-	if nolint.suppressesNode(pass.Fset, stmt) {
+	if nolint.Suppresses(pass.Fset, stmt) {
 		return
 	}
 	pass.Reportf(target.Pos(),

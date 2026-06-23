@@ -21,6 +21,7 @@ import (
 	"go/ast"
 	"go/types"
 
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/internal/nolint"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -54,7 +55,7 @@ func (c *checker) run(pass *analysis.Pass) (any, error) {
 		return nil, nil
 	}
 	for _, file := range pass.Files {
-		nolint := collectNolint(pass.Fset, file)
+		nolint := nolint.Collect(pass.Fset, file)
 		ast.Inspect(file, func(n ast.Node) bool {
 			if call, ok := n.(*ast.CallExpr); ok {
 				c.checkCall(pass, nolint, call)
@@ -65,7 +66,7 @@ func (c *checker) run(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
-func (c *checker) checkCall(pass *analysis.Pass, nolint nolintInfo, call *ast.CallExpr) {
+func (c *checker) checkCall(pass *analysis.Pass, nolint nolint.Info, call *ast.CallExpr) {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
 		return

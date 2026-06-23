@@ -6,6 +6,8 @@ import (
 	"go/types"
 	"testing"
 
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/internal/nolint"
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/internal/temporalsdk"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -16,7 +18,7 @@ import (
 // two arguments (as a malformed/partial AST could). The guard must return rather
 // than index call.Args[2] out of range, and must report nothing.
 func TestCheckRequireOptions_TooFewArgs(t *testing.T) {
-	pkg := types.NewPackage(workerPkg, "worker")
+	pkg := types.NewPackage(temporalsdk.WorkerPkg, "worker")
 	fn := types.NewFunc(token.NoPos, pkg, "New", types.NewSignatureType(nil, nil, nil, nil, nil, false))
 	sel := ast.NewIdent("New")
 	call := &ast.CallExpr{
@@ -25,11 +27,13 @@ func TestCheckRequireOptions_TooFewArgs(t *testing.T) {
 	}
 	pass := &analysis.Pass{
 		TypesInfo: &types.Info{Uses: map[*ast.Ident]types.Object{sel: fn}},
-		Report:    func(analysis.Diagnostic) { t.Fatal("reported a diagnostic for a worker.New call with fewer than three arguments") },
+		Report: func(analysis.Diagnostic) {
+			t.Fatal("reported a diagnostic for a worker.New call with fewer than three arguments")
+		},
 	}
 
 	c := &checker{requireOptions: true}
-	c.checkRequireOptions(pass, nolintInfo{}, call)
+	c.checkRequireOptions(pass, nolint.Info{}, call)
 }
 
 // namedIn builds a named struct type whose object lives in the given package
@@ -50,10 +54,10 @@ func TestIsWorkerOptions(t *testing.T) {
 		{"nil type", nil, false},
 		{"basic (non-named) type", types.Typ[types.Int], false},
 		{"nil-package named type", types.NewNamed(types.NewTypeName(token.NoPos, nil, "Options", nil), types.NewStruct(nil, nil), nil), false},
-		{"worker.Options matches", namedIn(workerPkg, "Options"), true},
-		{"internal.WorkerOptions matches", namedIn(internalPkg, "WorkerOptions"), true},
-		{"worker package, wrong name", namedIn(workerPkg, "Worker"), false},
-		{"internal package, wrong name", namedIn(internalPkg, "Options"), false},
+		{"worker.Options matches", namedIn(temporalsdk.WorkerPkg, "Options"), true},
+		{"internal.WorkerOptions matches", namedIn(temporalsdk.InternalPkg, "WorkerOptions"), true},
+		{"worker package, wrong name", namedIn(temporalsdk.WorkerPkg, "Worker"), false},
+		{"internal package, wrong name", namedIn(temporalsdk.InternalPkg, "Options"), false},
 		{"some other package", namedIn("example.com/other", "Options"), false},
 	}
 
