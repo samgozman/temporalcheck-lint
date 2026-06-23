@@ -429,26 +429,47 @@ ao := workflow.ActivityOptions{
 }
 ```
 
-The check is **on by default**. It is pure AST + types with near-zero false
-positives: an activity without a required timeout is always rejected at run time,
-never a deliberate pattern, so there is nothing to opt into — only a `disabled`
-switch to turn it off.
+This is the **`(required-timeout)`** rule, and it is **on by default**. It is pure
+AST + types with near-zero false positives: an activity without a required timeout
+is always rejected at run time, never a deliberate pattern, so there is nothing to
+opt into.
+
+A second, **opt-in `(require-start-to-close)`** rule nudges a stricter practice.
+Setting only `ScheduleToCloseTimeout` is accepted at run time, but it bounds only
+the whole activity across retries — a single attempt is left unbounded, so a hung
+attempt runs until the schedule-to-close window elapses. The recommendation is to
+always bound an attempt with `StartToCloseTimeout`:
+
+```go
+// Accepted, but the attempt is unbounded — flagged only when require-start-to-close is on.
+_ = workflow.ActivityOptions{ScheduleToCloseTimeout: time.Hour}
+
+// Bounds each attempt — never flagged.
+_ = workflow.ActivityOptions{StartToCloseTimeout: time.Minute}
+_ = workflow.ActivityOptions{StartToCloseTimeout: time.Minute, ScheduleToCloseTimeout: time.Hour}
+```
+
+Setting `StartToCloseTimeout` (alone or alongside `ScheduleToCloseTimeout`) always
+satisfies it, so it is off by default since schedule-to-close-only is a legitimate
+choice — a nudge to opt into, not a baseline.
 
 ##### Example diagnostics
 
 ```
 workflow.go:14  ActivityOptions sets no required timeout: set StartToCloseTimeout or ScheduleToCloseTimeout, or the activity is rejected at run time (required-timeout)
+workflow.go:22  ActivityOptions sets ScheduleToCloseTimeout but not StartToCloseTimeout: bound each attempt with StartToCloseTimeout (require-start-to-close)
 ```
 
-The message names the **options type** and ends with the source
-`(required-timeout)` (golangci-lint then appends the linter name,
-`(activitytimeout)`, after that).
+Each message names the **options type** and ends with the rule that produced it —
+`(required-timeout)` or `(require-start-to-close)` (golangci-lint then appends the
+linter name, `(activitytimeout)`, after that).
 
 #### Settings
 
-| Key        | Type | Default | Description                                        |
-|------------|------|---------|----------------------------------------------------|
-| `disabled` | bool | `false` | Turn the `activitytimeout` analyzer off entirely    |
+| Key                       | Type | Default | Description                                                                                   |
+|---------------------------|------|---------|-----------------------------------------------------------------------------------------------|
+| `disabled`                | bool | `false` | Turn the `activitytimeout` analyzer off entirely                                              |
+| `require-start-to-close`  | bool | `false` | Also flag literals that set `ScheduleToCloseTimeout` but not `StartToCloseTimeout`            |
 
 #### Limitations
 

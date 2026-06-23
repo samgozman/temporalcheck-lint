@@ -27,6 +27,15 @@ func TestActivityTimeout_Benign(t *testing.T) {
 	analysistest.Run(t, analysistest.TestData(), a, "activitytimeoutfixtures/benign")
 }
 
+// TestActivityTimeout_RequireStartToClose: with RequireStartToClose set, a literal
+// that sets ScheduleToCloseTimeout but not StartToCloseTimeout is flagged by the
+// opt-in sub-rule, while the always-on required-timeout check still fires for a
+// literal that sets neither.
+func TestActivityTimeout_RequireStartToClose(t *testing.T) {
+	a := activitytimeout.NewAnalyzer(activitytimeout.Settings{RequireStartToClose: true})
+	analysistest.Run(t, analysistest.TestData(), a, "activitytimeoutfixtures/requirestarttoclose")
+}
+
 // TestActivityTimeout_Disabled: with Disabled set, the analyzer reports nothing
 // even on a fixture whose literal omits a required timeout.
 func TestActivityTimeout_Disabled(t *testing.T) {

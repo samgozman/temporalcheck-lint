@@ -78,6 +78,14 @@ Initial proof of concept.
   value isn't evaluated); empty `{}` literals (typically populated field-by-field
   afterwards) and positional literals are intentionally skipped. Turn it off via
   the `activitytimeout.disabled` setting.
+  - **require-start-to-close** (opt-in via `activitytimeout.require-start-to-close`):
+    also flags a literal that sets `ScheduleToCloseTimeout` but not
+    `StartToCloseTimeout`. Such a literal is accepted at run time, but
+    `ScheduleToCloseTimeout` bounds only the whole activity across retries — a single
+    attempt is left unbounded — so the recommended practice is to also bound each
+    attempt with `StartToCloseTimeout`. Setting `StartToCloseTimeout` (alone or with
+    `ScheduleToCloseTimeout`) satisfies it. Off by default since
+    schedule-to-close-only is a legitimate choice. Tagged `(require-start-to-close)`.
 - `futureget` analyzer (on by default): flags a `.Get` call on a
   `workflow.Future`, `workflow.ChildWorkflowFuture` or `converter.EncodedValue`
   whose returned **error is discarded** — used as a bare expression statement or

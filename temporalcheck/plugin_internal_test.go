@@ -23,7 +23,8 @@ func TestNew(t *testing.T) {
 			"disabled": false,
 		},
 		"activitytimeout": map[string]any{
-			"disabled": false,
+			"disabled":               false,
+			"require-start-to-close": true,
 		},
 		"futureget": map[string]any{
 			"disabled": false,

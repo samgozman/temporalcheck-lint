@@ -15,10 +15,17 @@ const (
 	internalPkg = "go.temporal.io/sdk/internal"
 )
 
+// The two timeout fields the checks reason about. Both ActivityOptions and
+// LocalActivityOptions carry them.
+const (
+	fieldStartToClose    = "StartToCloseTimeout"
+	fieldScheduleToClose = "ScheduleToCloseTimeout"
+)
+
 // requiredTimeouts are the option fields Temporal requires at least one of: an
 // activity with neither StartToCloseTimeout nor ScheduleToCloseTimeout set is
-// rejected at run time. Both ActivityOptions and LocalActivityOptions carry them.
-var requiredTimeouts = []string{"StartToCloseTimeout", "ScheduleToCloseTimeout"}
+// rejected at run time.
+var requiredTimeouts = []string{fieldStartToClose, fieldScheduleToClose}
 
 // optionTypeName returns the option-struct name -- "ActivityOptions" or
 // "LocalActivityOptions" -- when t is that workflow type, and false for anything
@@ -84,4 +91,15 @@ func hasRequiredTimeout(fields map[string]bool) bool {
 		}
 	}
 	return false
+}
+
+// scheduleToCloseOnly reports whether the literal bounds the whole activity with
+// ScheduleToCloseTimeout but omits StartToCloseTimeout, leaving a single attempt
+// unbounded. Such a literal satisfies hasRequiredTimeout (so it is never the
+// always-on diagnostic), but the recommended practice is to also bound each
+// attempt with StartToCloseTimeout -- which the opt-in require-start-to-close
+// sub-rule nudges. As elsewhere, presence of the key is enough; the value is not
+// evaluated.
+func scheduleToCloseOnly(fields map[string]bool) bool {
+	return fields[fieldScheduleToClose] && !fields[fieldStartToClose]
 }

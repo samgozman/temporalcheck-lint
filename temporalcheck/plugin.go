@@ -114,6 +114,14 @@ type ActivityTimeoutSettings struct {
 	// default: an activity with neither required timeout is rejected at run time,
 	// so there is nothing to opt into.
 	Disabled *bool `json:"disabled"`
+
+	// RequireStartToClose opts into also flagging a literal that sets
+	// ScheduleToCloseTimeout but not StartToCloseTimeout (default false). Such a
+	// literal is accepted at run time, but ScheduleToClose bounds only the whole
+	// activity across retries; the recommended practice is to also bound each
+	// attempt with StartToCloseTimeout. Off by default since schedule-to-close-only
+	// is a legitimate choice.
+	RequireStartToClose *bool `json:"require-start-to-close"`
 }
 
 // FutureGetSettings configures the futureget analyzer, which flags a
@@ -289,6 +297,10 @@ func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 	if p.settings.ActivityTimeout.Disabled != nil {
 		activityTimeoutDisabled = *p.settings.ActivityTimeout.Disabled
 	}
+	activityTimeoutRequireStartToClose := false
+	if p.settings.ActivityTimeout.RequireStartToClose != nil {
+		activityTimeoutRequireStartToClose = *p.settings.ActivityTimeout.RequireStartToClose
+	}
 	futureGetDisabled := false
 	if p.settings.FutureGet.Disabled != nil {
 		futureGetDisabled = *p.settings.FutureGet.Disabled
@@ -353,7 +365,8 @@ func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 			Disabled: optionsDiscardDisabled,
 		}),
 		activitytimeout.NewAnalyzer(activitytimeout.Settings{
-			Disabled: activityTimeoutDisabled,
+			Disabled:            activityTimeoutDisabled,
+			RequireStartToClose: activityTimeoutRequireStartToClose,
 		}),
 		futureget.NewAnalyzer(futureget.Settings{
 			Disabled: futureGetDisabled,

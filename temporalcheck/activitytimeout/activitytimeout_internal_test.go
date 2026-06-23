@@ -99,3 +99,26 @@ func TestHasRequiredTimeout(t *testing.T) {
 		})
 	}
 }
+
+func TestScheduleToCloseOnly(t *testing.T) {
+	tests := []struct {
+		name   string
+		fields map[string]bool
+		want   bool
+	}{
+		{"schedule-to-close only", map[string]bool{"ScheduleToCloseTimeout": true}, true},
+		{"schedule-to-close with other field", map[string]bool{"ScheduleToCloseTimeout": true, "TaskQueue": true}, true},
+		{"both timeouts set", map[string]bool{"ScheduleToCloseTimeout": true, "StartToCloseTimeout": true}, false},
+		{"start-to-close only", map[string]bool{"StartToCloseTimeout": true}, false},
+		{"neither timeout", map[string]bool{"TaskQueue": true}, false},
+		{"no fields", map[string]bool{}, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := scheduleToCloseOnly(tt.fields); got != tt.want {
+				t.Errorf("scheduleToCloseOnly(%v) = %v, want %v", tt.fields, got, tt.want)
+			}
+		})
+	}
+}
