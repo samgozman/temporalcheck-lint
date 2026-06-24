@@ -1,6 +1,7 @@
 package futureget
 
 import (
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/internal/temporalsdk"
 	"go/ast"
 	"go/token"
 	"go/types"
@@ -51,13 +52,13 @@ func TestReceiverTypeName(t *testing.T) {
 	}{
 		{"nil type", nil, "", false},
 		{"basic non-named type", types.Typ[types.Int], "", false},
-		{"Future in workflow package", namedIn(workflowPkg, "Future"), "Future", true},
-		{"Future in internal package", namedIn(internalPkg, "Future"), "Future", true},
-		{"ChildWorkflowFuture in internal", namedIn(internalPkg, "ChildWorkflowFuture"), "ChildWorkflowFuture", true},
-		{"EncodedValue in converter", namedIn(converterPkg, "EncodedValue"), "EncodedValue", true},
+		{"Future in workflow package", namedIn(temporalsdk.WorkflowPkg, "Future"), "Future", true},
+		{"Future in internal package", namedIn(temporalsdk.InternalPkg, "Future"), "Future", true},
+		{"ChildWorkflowFuture in internal", namedIn(temporalsdk.InternalPkg, "ChildWorkflowFuture"), "ChildWorkflowFuture", true},
+		{"EncodedValue in converter", namedIn(temporalsdk.ConverterPkg, "EncodedValue"), "EncodedValue", true},
 		{"matching name, wrong package", namedIn("example.com/other", "Future"), "", false},
-		{"EncodedValue outside converter", namedIn(workflowPkg, "EncodedValue"), "", false},
-		{"unrelated name", namedIn(workflowPkg, "Selector"), "", false},
+		{"EncodedValue outside converter", namedIn(temporalsdk.WorkflowPkg, "EncodedValue"), "", false},
+		{"unrelated name", namedIn(temporalsdk.WorkflowPkg, "Selector"), "", false},
 		{"matching name, nil package", nilPkgNamed("Future"), "", false},
 	}
 

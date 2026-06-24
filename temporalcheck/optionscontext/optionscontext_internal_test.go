@@ -6,31 +6,6 @@ import (
 	"testing"
 )
 
-func TestNolintForOptionsContext(t *testing.T) {
-	tests := []struct {
-		name string
-		text string
-		want bool
-	}{
-		{"not a nolint comment", "// just a comment", false},
-		{"bare nolint", "//nolint", true},
-		{"nolint with no colon", "//nolintfoo", false},
-		{"nolint all", "//nolint:all", true},
-		{"names the plugin", "//nolint:temporalcheck", true},
-		{"names plugin with explanation", "//nolint:temporalcheck // on purpose", true},
-		{"names another linter only", "//nolint:gocritic", false},
-		{"names the analyzer, not the plugin", "//nolint:optionscontext", false},
-		{"plugin among several", "//nolint:gocritic,temporalcheck", true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := nolintForOptionsContext(tt.text); got != tt.want {
-				t.Errorf("nolintForOptionsContext(%q) = %v, want %v", tt.text, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestKindMetadata(t *testing.T) {
 	tests := []struct {
 		k      kind

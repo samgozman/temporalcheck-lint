@@ -4,6 +4,8 @@ import (
 	"go/ast"
 	"go/types"
 
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/internal/nolint"
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/internal/temporalsdk"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -12,13 +14,12 @@ import (
 // apply). We match it by package path + name through go/types -- never importing
 // the SDK -- so an aliased import of the workflow package resolves the same way.
 const (
-	workflowPkg = "go.temporal.io/sdk/workflow"
-	funcName    = "NewContinueAsNewError"
+	funcName = "NewContinueAsNewError"
 )
 
 // checkDiscarded reports call when it is workflow.NewContinueAsNewError and its
 // result is being thrown away, after honoring //nolint.
-func (c *checker) checkDiscarded(pass *analysis.Pass, nolint nolintInfo, call *ast.CallExpr) {
+func (c *checker) checkDiscarded(pass *analysis.Pass, nolint nolint.Info, call *ast.CallExpr) {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
 		return
@@ -34,7 +35,7 @@ func (c *checker) checkDiscarded(pass *analysis.Pass, nolint nolintInfo, call *a
 	// Honor //nolint directives ourselves so suppression works the same way in
 	// standalone/analysistest runs, not only under golangci-lint. Checked after
 	// confirming this is a call we flag, so unrelated calls cost nothing.
-	if nolint.suppressesCall(pass.Fset, call) {
+	if nolint.Suppresses(pass.Fset, call) {
 		return
 	}
 
@@ -48,5 +49,5 @@ func (c *checker) checkDiscarded(pass *analysis.Pass, nolint nolintInfo, call *a
 // fn (the Uses entry was not a function) or a package-less builtin is not a match.
 func isContinueAsNewError(fn *types.Func) bool {
 	return fn != nil && fn.Pkg() != nil &&
-		fn.Pkg().Path() == workflowPkg && fn.Name() == funcName
+		fn.Pkg().Path() == temporalsdk.WorkflowPkg && fn.Name() == funcName
 }

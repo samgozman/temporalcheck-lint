@@ -4,21 +4,9 @@ import (
 	"go/ast"
 	"go/types"
 
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/internal/nolint"
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/internal/temporalsdk"
 	"golang.org/x/tools/go/analysis"
-)
-
-const (
-	workflowPkg = "go.temporal.io/sdk/workflow"
-	// internalPkg is where the SDK declares workflow.Context, published from the
-	// workflow package as an alias (type Context = internal.Context), so the
-	// resolved Context type lives here, not in workflowPkg.
-	internalPkg = "go.temporal.io/sdk/internal"
-	// clientPkg is where the SDK declares the Client interface directly (unlike
-	// Context, it is not an internal alias), so client.ExecuteWorkflow's receiver
-	// is client.Client. internalPkg.Client is a separate interface client.Client
-	// implements; we accept it too, defensively, but the real receiver is here.
-	clientPkg  = "go.temporal.io/sdk/client"
-	contextPkg = "context"
 )
 
 // Diagnostics are suffixed with the source that produced them. The chan/func
@@ -69,12 +57,12 @@ var clientEntries = map[string]entry{
 // the client.Client interface, so we match them by name and receiver rather than
 // by package path.
 func entryFor(fn *types.Func) (entry, bool) {
-	if fn.Pkg().Path() == workflowPkg {
+	if fn.Pkg().Path() == temporalsdk.WorkflowPkg {
 		e, ok := workflowEntries[fn.Name()]
 		return e, ok
 	}
 	if e, ok := clientEntries[fn.Name()]; ok &&
-		(isReceiver(fn, clientPkg, "Client") || isReceiver(fn, internalPkg, "Client")) {
+		(temporalsdk.IsReceiver(fn, temporalsdk.ClientPkg, "Client") || temporalsdk.IsReceiver(fn, temporalsdk.InternalPkg, "Client")) {
 		return e, true
 	}
 	return entry{}, false
@@ -84,7 +72,7 @@ func entryFor(fn *types.Func) (entry, bool) {
 // top-level non-serializable parameter or return. A target we cannot resolve to a
 // signature -- a string-registered name or any non-function value -- is left
 // alone rather than risk a false positive.
-func (c *checker) checkTarget(pass *analysis.Pass, nolint nolintInfo, call *ast.CallExpr, e entry) {
+func (c *checker) checkTarget(pass *analysis.Pass, nolint nolint.Info, call *ast.CallExpr, e entry) {
 	if len(call.Args) <= e.targetIdx {
 		return
 	}
@@ -97,7 +85,7 @@ func (c *checker) checkTarget(pass *analysis.Pass, nolint nolintInfo, call *ast.
 	// Honor //nolint directives ourselves so suppression works the same way in
 	// standalone/analysistest runs, not only under golangci-lint. Checked after
 	// confirming this is a target we resolve, so unrelated calls cost nothing.
-	if nolint.suppressesCall(pass.Fset, call) {
+	if nolint.Suppresses(pass.Fset, call) {
 		return
 	}
 
@@ -112,7 +100,7 @@ func (c *checker) checkTarget(pass *analysis.Pass, nolint nolintInfo, call *ast.
 // writes after the context.
 func (c *checker) checkParams(pass *analysis.Pass, target ast.Expr, e entry, name string, sig *types.Signature) {
 	params := sig.Params()
-	skip := skipCount(sig, e.isWorkflow)
+	skip := temporalsdk.SkipCount(sig, e.isWorkflow)
 	for i := skip; i < params.Len(); i++ {
 		c.report(pass, target, e.noun, name, "parameter", i-skip+1, argType(sig, i))
 	}
@@ -235,73 +223,6 @@ var errorType = types.Universe.Lookup("error").Type()
 
 func isError(t types.Type) bool {
 	return types.Identical(t, errorType)
-}
-
-// skipCount returns how many leading parameters Temporal injects at run time and
-// that the author therefore writes but the analyzer must not treat as data: the
-// always-injected workflow.Context for a workflow, or the optional context.Context
-// for an activity.
-func skipCount(sig *types.Signature, isWorkflow bool) int {
-	if sig.Params().Len() == 0 {
-		return 0
-	}
-	first := sig.Params().At(0).Type()
-	if isWorkflow {
-		if isWorkflowContext(first) {
-			return 1
-		}
-		return 0
-	}
-	if named(first, contextPkg, "Context") {
-		return 1
-	}
-	return 0
-}
-
-// isWorkflowContext reports whether t is workflow.Context. The SDK publishes it as
-// `type Context = internal.Context`, so depending on the gotypesalias mode t is
-// either the alias (named in workflowPkg) or the resolved internal named type
-// (named in internalPkg); both must count as the injected context.
-func isWorkflowContext(t types.Type) bool {
-	if named(types.Unalias(t), internalPkg, "Context") {
-		return true
-	}
-	return named(t, workflowPkg, "Context")
-}
-
-// isReceiver reports whether fn is a method whose receiver is (a pointer to) the
-// named type pkgPath.name -- used to confirm ExecuteWorkflow belongs to the SDK's
-// client.Client (declared as internal.Client) and not some unrelated method.
-func isReceiver(fn *types.Func, pkgPath, name string) bool {
-	sig, ok := fn.Type().(*types.Signature)
-	if !ok || sig.Recv() == nil {
-		return false
-	}
-	return named(deref(sig.Recv().Type()), pkgPath, name)
-}
-
-// named reports whether t is the named type pkgPath.name. It accepts both defined
-// types and aliases, since both carry a *types.TypeName.
-func named(t types.Type, pkgPath, name string) bool {
-	var obj *types.TypeName
-	switch n := t.(type) {
-	case *types.Named:
-		obj = n.Obj()
-	case *types.Alias:
-		obj = n.Obj()
-	default:
-		return false
-	}
-	return obj != nil && obj.Pkg() != nil &&
-		obj.Pkg().Path() == pkgPath && obj.Name() == name
-}
-
-// deref strips one level of pointer indirection, leaving non-pointers untouched.
-func deref(t types.Type) types.Type {
-	if p, ok := t.Underlying().(*types.Pointer); ok {
-		return p.Elem()
-	}
-	return t
 }
 
 // typeStr renders a type using short package names (workflow.Context, not the full

@@ -5,6 +5,7 @@ import (
 	"go/types"
 	"strings"
 
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/internal/nolint"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -52,52 +53,12 @@ var fmtFprintFuncs = map[string]bool{
 	"Fprint": true, "Fprintf": true, "Fprintln": true,
 }
 
-// isWorkflowFunc reports whether a function with the given type is a Temporal
-// workflow definition: its first parameter is workflow.Context.
-func isWorkflowFunc(pass *analysis.Pass, ft *ast.FuncType) bool {
-	if ft == nil || ft.Params == nil || len(ft.Params.List) == 0 {
-		return false
-	}
-	// A field may declare several names sharing one type; the first parameter's
-	// type is that field's type regardless.
-	return isWorkflowContext(pass.TypesInfo.TypeOf(ft.Params.List[0].Type))
-}
-
-// isWorkflowContext reports whether t is workflow.Context. The SDK publishes it
-// as `type Context = internal.Context`, so depending on the gotypesalias mode t
-// is either the alias (named in workflowPkg) or the resolved internal named type
-// (named in workflowInternalPkg); both count.
-func isWorkflowContext(t types.Type) bool {
-	if t == nil {
-		return false
-	}
-	if named(types.Unalias(t), workflowInternalPkg, "Context") {
-		return true
-	}
-	return named(t, workflowPkg, "Context")
-}
-
-// named reports whether t is the named (or aliased) type pkgPath.name.
-func named(t types.Type, pkgPath, name string) bool {
-	var obj *types.TypeName
-	switch n := t.(type) {
-	case *types.Named:
-		obj = n.Obj()
-	case *types.Alias:
-		obj = n.Obj()
-	default:
-		return false
-	}
-	return obj != nil && obj.Pkg() != nil &&
-		obj.Pkg().Path() == pkgPath && obj.Name() == name
-}
-
 // reportLogging walks a workflow definition's body -- including the closures
 // lexically nested in it, since those run as part of the same workflow execution
 // -- and reports each stdlib/zerolog logging call. On a match it stops descending
 // so a chained call (zerolog's log.Info().Msg(...)) or a logging call nested in
 // another call's arguments yields a single diagnostic.
-func (c *checker) reportLogging(pass *analysis.Pass, nolint nolintInfo, body *ast.BlockStmt) {
+func (c *checker) reportLogging(pass *analysis.Pass, nolint nolint.Info, body *ast.BlockStmt) {
 	ast.Inspect(body, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
@@ -110,7 +71,7 @@ func (c *checker) reportLogging(pass *analysis.Pass, nolint nolintInfo, body *as
 		// Honor //nolint ourselves so suppression works the same way in
 		// standalone/analysistest runs, not only under golangci-lint. Either way we
 		// stop descending: a suppressed call's inner chain must not be re-reported.
-		if !nolint.suppressesNode(pass.Fset, call) {
+		if !nolint.Suppresses(pass.Fset, call) {
 			pass.Reportf(call.Pos(),
 				"logging via %s in workflow code double-logs on every replay and is not replay-aware; use workflow.GetLogger(ctx) instead (%s)",
 				label, tagWorkflowLogger)

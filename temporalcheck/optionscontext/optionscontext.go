@@ -28,11 +28,11 @@ import (
 	"go/ast"
 	"go/types"
 
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/internal/nolint"
 	"golang.org/x/tools/go/analysis"
 )
 
 const (
-	workflowPkg = "go.temporal.io/sdk/workflow"
 	// tagOptionsContext suffixes the diagnostic so it is clear which check
 	// produced it.
 	tagOptionsContext = "options-context"
@@ -86,7 +86,7 @@ func (c *checker) run(pass *analysis.Pass) (any, error) {
 		return nil, nil
 	}
 	for _, file := range pass.Files {
-		nolint := collectNolint(pass.Fset, file)
+		nolint := nolint.Collect(pass.Fset, file)
 		for _, decl := range file.Decls {
 			fn, ok := decl.(*ast.FuncDecl)
 			if !ok || fn.Body == nil {
@@ -101,7 +101,7 @@ func (c *checker) run(pass *analysis.Pass) (any, error) {
 // analyzeFunc runs the per-function flow analysis: identify context variables
 // that are unsafe to track at all (captured in a closure), then interpret the
 // body in source order, firing on any seen conflict.
-func (c *checker) analyzeFunc(pass *analysis.Pass, nolint nolintInfo, fn *ast.FuncDecl) {
+func (c *checker) analyzeFunc(pass *analysis.Pass, nolint nolint.Info, fn *ast.FuncDecl) {
 	wc := &walkCtx{
 		pass:     pass,
 		nolint:   nolint,
@@ -114,7 +114,7 @@ func (c *checker) analyzeFunc(pass *analysis.Pass, nolint nolintInfo, fn *ast.Fu
 // facts) is threaded separately so it can be cloned at control-flow boundaries.
 type walkCtx struct {
 	pass   *analysis.Pass
-	nolint nolintInfo
+	nolint nolint.Info
 	// poisoned vars are never tracked and never fired on -- a context variable
 	// assigned inside a closure could be reconfigured at an unknown time, so we
 	// cannot reason about its value.

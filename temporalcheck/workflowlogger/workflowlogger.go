@@ -25,15 +25,12 @@ package workflowlogger
 import (
 	"go/ast"
 
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/internal/nolint"
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/internal/workflowscope"
 	"golang.org/x/tools/go/analysis"
 )
 
 const (
-	workflowPkg = "go.temporal.io/sdk/workflow"
-	// workflowInternalPkg is where the SDK actually declares Context; the public
-	// workflow.Context is an alias to it, so a parameter's type may surface in
-	// either package depending on gotypesalias mode.
-	workflowInternalPkg = "go.temporal.io/sdk/internal"
 	// tagWorkflowLogger suffixes the diagnostic so it is clear which check
 	// produced it.
 	tagWorkflowLogger = "workflow-logger"
@@ -70,35 +67,10 @@ func (c *checker) run(pass *analysis.Pass) (any, error) {
 		return nil, nil
 	}
 	for _, file := range pass.Files {
-		nolint := collectNolint(pass.Fset, file)
-		// Walk the file looking for workflow definitions. The first one found on a
-		// given path owns its whole subtree (including nested closures), so once we
-		// report on its body we stop descending -- a nested workflow closure's
-		// logging is already covered, and re-entering it would double-report.
-		ast.Inspect(file, func(n ast.Node) bool {
-			body, ft := funcBody(n)
-			if body == nil {
-				return true
-			}
-			if isWorkflowFunc(pass, ft) {
-				c.reportLogging(pass, nolint, body)
-				return false
-			}
-			return true
+		nolint := nolint.Collect(pass.Fset, file)
+		workflowscope.Walk(pass, file, func(body *ast.BlockStmt) {
+			c.reportLogging(pass, nolint, body)
 		})
 	}
 	return nil, nil
-}
-
-// funcBody returns the body and type of a function declaration or literal, or
-// (nil, nil) for any other node.
-func funcBody(n ast.Node) (*ast.BlockStmt, *ast.FuncType) {
-	switch fn := n.(type) {
-	case *ast.FuncDecl:
-		return fn.Body, fn.Type
-	case *ast.FuncLit:
-		return fn.Body, fn.Type
-	default:
-		return nil, nil
-	}
 }

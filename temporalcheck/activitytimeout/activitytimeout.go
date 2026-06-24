@@ -20,6 +20,7 @@ package activitytimeout
 import (
 	"go/ast"
 
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/internal/nolint"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -72,7 +73,7 @@ func (c *checker) run(pass *analysis.Pass) (any, error) {
 		return nil, nil
 	}
 	for _, file := range pass.Files {
-		nolint := collectNolint(pass.Fset, file)
+		nolint := nolint.Collect(pass.Fset, file)
 		ast.Inspect(file, func(n ast.Node) bool {
 			// Composite literals are visited wherever they appear -- including the
 			// inner literal of &workflow.ActivityOptions{...} and the elided element
@@ -88,7 +89,7 @@ func (c *checker) run(pass *analysis.Pass) (any, error) {
 
 // checkLiteral reports lit when it is an ActivityOptions/LocalActivityOptions
 // literal that sets fields but no required timeout, after honoring //nolint.
-func (c *checker) checkLiteral(pass *analysis.Pass, nolint nolintInfo, lit *ast.CompositeLit) {
+func (c *checker) checkLiteral(pass *analysis.Pass, nolint nolint.Info, lit *ast.CompositeLit) {
 	// Resolve via the type system (not the source text), so aliased imports of the
 	// workflow package still match.
 	name, ok := optionTypeName(pass.TypesInfo.TypeOf(lit))
@@ -112,7 +113,7 @@ func (c *checker) checkLiteral(pass *analysis.Pass, nolint nolintInfo, lit *ast.
 	// due, so unrelated literals cost nothing.
 
 	if !hasRequiredTimeout(fields) {
-		if nolint.suppressesNode(pass.Fset, lit) {
+		if nolint.Suppresses(pass.Fset, lit) {
 			return
 		}
 		pass.Reportf(lit.Pos(),
@@ -124,7 +125,7 @@ func (c *checker) checkLiteral(pass *analysis.Pass, nolint nolintInfo, lit *ast.
 	// The literal has a required timeout. The opt-in sub-rule nudges bounding each
 	// attempt with StartToCloseTimeout when only ScheduleToCloseTimeout is set.
 	if c.requireStartToClose && scheduleToCloseOnly(fields) {
-		if nolint.suppressesNode(pass.Fset, lit) {
+		if nolint.Suppresses(pass.Fset, lit) {
 			return
 		}
 		pass.Reportf(lit.Pos(),

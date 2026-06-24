@@ -5,6 +5,8 @@ import (
 	"go/constant"
 	"go/types"
 
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/internal/nolint"
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/internal/temporalsdk"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -21,11 +23,6 @@ const (
 // go/types -- resolving the alias to its internal definition -- so aliased imports
 // resolve and we never import the SDK. The two packages name the type differently
 // (worker.Options vs internal.WorkerOptions), so each path checks its own name.
-const (
-	workerPkg   = "go.temporal.io/sdk/worker"
-	internalPkg = "go.temporal.io/sdk/internal"
-)
-
 // panicFields are the two options fields Temporal documents as unable to hold the
 // value 1: the pollers alternate between sticky and non-sticky queues, so a single
 // one deadlocks the worker, which panics on start. The activity counterparts carry
@@ -51,7 +48,7 @@ var concurrencyFields = []string{
 // checkPanic reports each workflow-task field a worker.Options literal sets to a
 // constant 1 -- a guaranteed worker-boot panic. The diagnostic anchors on the
 // offending value expression, not the literal.
-func (c *checker) checkPanic(pass *analysis.Pass, nolint nolintInfo, lit *ast.CompositeLit) {
+func (c *checker) checkPanic(pass *analysis.Pass, nolint nolint.Info, lit *ast.CompositeLit) {
 	if !isWorkerOptions(pass.TypesInfo.TypeOf(lit)) {
 		return
 	}
@@ -65,7 +62,7 @@ func (c *checker) checkPanic(pass *analysis.Pass, nolint nolintInfo, lit *ast.Co
 		// Honor //nolint ourselves so suppression works the same way in
 		// standalone/analysistest runs, not only under golangci-lint. Checked after
 		// confirming this value is flagged, so unrelated values cost nothing.
-		if nolint.suppressesNode(pass.Fset, val) {
+		if nolint.Suppresses(pass.Fset, val) {
 			continue
 		}
 		pass.Reportf(val.Pos(),
@@ -78,7 +75,7 @@ func (c *checker) checkPanic(pass *analysis.Pass, nolint nolintInfo, lit *ast.Co
 // literal sets none of the five concurrency limits -- the worker then runs on the
 // SDK defaults. Only the literal passed directly to worker.New is inspected; a
 // variable argument is skipped since its fields aren't visible at the call site.
-func (c *checker) checkRequireOptions(pass *analysis.Pass, nolint nolintInfo, call *ast.CallExpr) {
+func (c *checker) checkRequireOptions(pass *analysis.Pass, nolint nolint.Info, call *ast.CallExpr) {
 	sel, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
 		return
@@ -86,7 +83,7 @@ func (c *checker) checkRequireOptions(pass *analysis.Pass, nolint nolintInfo, ca
 	// Resolve via Uses (not the source text), so aliased imports of the worker
 	// package still match.
 	fn, ok := pass.TypesInfo.Uses[sel.Sel].(*types.Func)
-	if !ok || fn.Pkg() == nil || fn.Pkg().Path() != workerPkg || fn.Name() != "New" {
+	if !ok || fn.Pkg() == nil || fn.Pkg().Path() != temporalsdk.WorkerPkg || fn.Name() != "New" {
 		return
 	}
 
@@ -107,7 +104,7 @@ func (c *checker) checkRequireOptions(pass *analysis.Pass, nolint nolintInfo, ca
 		}
 	}
 
-	if nolint.suppressesNode(pass.Fset, lit) {
+	if nolint.Suppresses(pass.Fset, lit) {
 		return
 	}
 	pass.Reportf(lit.Pos(),
@@ -133,9 +130,9 @@ func isWorkerOptions(t types.Type) bool {
 		return false
 	}
 	switch obj.Pkg().Path() {
-	case workerPkg:
+	case temporalsdk.WorkerPkg:
 		return obj.Name() == "Options"
-	case internalPkg:
+	case temporalsdk.InternalPkg:
 		return obj.Name() == "WorkerOptions"
 	default:
 		return false

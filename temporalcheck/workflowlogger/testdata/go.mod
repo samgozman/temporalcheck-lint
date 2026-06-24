@@ -10,6 +10,6 @@ require (
 	go.temporal.io/sdk v0.0.0
 )
 
-replace go.temporal.io/sdk => ./temporalsdk
+replace go.temporal.io/sdk => ../../internal/sdkstub
 
 replace github.com/rs/zerolog => ./zerolog
