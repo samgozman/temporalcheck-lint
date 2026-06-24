@@ -12,7 +12,7 @@ workflow.ExecuteActivity(ctx, ChargeCard, cardNumber, cvv)
 ```
 
 ```
-workflow.go:14  activity "ChargeCard" parameter 2 "cvv" matches the sensitive-data pattern; Temporal records arguments in durable workflow history — pass an opaque reference and fetch the secret inside the activity instead (sensitive)
+workflow.go:14  activity "ChargeCard" parameter 2 "cvv" matches the sensitive-data pattern; Temporal records arguments in durable workflow history -- pass an opaque reference and fetch the secret inside the activity instead (sensitive)
 ```
 
 Struct fields are also inspected:

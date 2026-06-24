@@ -5,10 +5,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 A [golangci-lint](https://golangci-lint.run) module plugin that statically checks
-[Temporal](https://temporal.io) Go SDK code. It ships one analyzer today
-(`execargs`) and is deliberately laid out so more Temporal checks slot in beside it
-under the same plugin. Read `README.md` for the user-facing behaviour and
-`CONTRIBUTING.md` for the contributor workflow — this file is for working *on* the
+[Temporal](https://temporal.io) Go SDK code. It ships 13 analyzers — `execargs`
+(the template) plus `stringtarget`, `optionsdiscard`, `activitytimeout`, `futureget`,
+`lossynumber`, `nonserializable`, `continueasnew`, `sensitiveargs`, `optionscontext`,
+`workeroptions`, `workflowstate`, and `workflowlogger` — each a sibling package under
+`temporalcheck/`, all registered through the same plugin. Read `README.md` for the
+user-facing behaviour (which checks are on by default vs opt-in, and their settings)
+and `CONTRIBUTING.md` for the contributor workflow — this file is for working *on* the
 code.
 
 ## Commands

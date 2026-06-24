@@ -28,6 +28,38 @@ func TestIsBlank(t *testing.T) {
 	}
 }
 
+func TestReturnsError(t *testing.T) {
+	errType := types.Universe.Lookup("error").Type()
+	sig := func(results ...types.Type) *types.Signature {
+		vars := make([]*types.Var, len(results))
+		for i, r := range results {
+			vars[i] = types.NewVar(token.NoPos, nil, "", r)
+		}
+		return types.NewSignatureType(nil, nil, nil, nil, types.NewTuple(vars...), false)
+	}
+
+	tests := []struct {
+		name string
+		typ  types.Type
+		want bool
+	}{
+		{"not a signature", types.Typ[types.Int], false},
+		{"no results", sig(), false},
+		{"last result is error", sig(errType), true},
+		{"value then error", sig(types.Typ[types.String], errType), true},
+		{"last result not error", sig(types.Typ[types.String]), false},
+		{"error not last", sig(errType, types.Typ[types.String]), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := returnsError(tt.typ); got != tt.want {
+				t.Errorf("returnsError(%v) = %v, want %v", tt.typ, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestReceiverTypeName(t *testing.T) {
 	// A named type in a package whose path matches one of the receiver packages,
 	// to exercise the matched branch without the analysistest harness.

@@ -21,7 +21,7 @@ w := worker.New(c, "task-queue", worker.Options{
 ```
 
 ```
-worker.go:14  worker.Options: MaxConcurrentWorkflowTaskPollers must not be 1 — the worker panics on start; use 0 for the default or a value >= 2 (worker-panic)
+worker.go:14  worker.Options: MaxConcurrentWorkflowTaskPollers must not be 1 -- the worker panics on start; use 0 for the default or a value >= 2 (worker-panic)
 ```
 
 ### `(require-options)` — opt-in

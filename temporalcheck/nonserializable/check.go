@@ -17,8 +17,8 @@ const (
 
 // Shared diagnostic tails.
 const (
-	explainUnencodable = "Temporal's DataConverter cannot serialize a channel or function — use a serializable type"
-	explainEmptyStruct = "Temporal's JSON converter serializes a struct with no exported fields to {} and silently drops its data — export fields or implement json.Marshaler"
+	explainUnencodable = "Temporal's DataConverter cannot serialize a channel or function -- use a serializable type"
+	explainEmptyStruct = "Temporal's JSON converter serializes a struct with no exported fields to {} and silently drops its data -- export fields or implement json.Marshaler"
 )
 
 // entry describes one Execute* entry point.

@@ -55,7 +55,7 @@ func (c *checker) checkPanic(pass *analysis.Pass, nolint nolint.Info, lit *ast.C
 			continue
 		}
 		pass.Reportf(val.Pos(),
-			"worker.Options: %s must not be 1 — the worker panics on start; use 0 for the default or a value >= 2 (%s)",
+			"worker.Options: %s must not be 1 -- the worker panics on start; use 0 for the default or a value >= 2 (%s)",
 			name, tagWorkerPanic)
 	}
 }

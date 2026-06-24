@@ -131,143 +131,67 @@ func New(raw any) (register.LinterPlugin, error) {
 	return &plugin{settings: s}, nil
 }
 
+// deref returns *p when set, or def when the pointer is nil. Settings fields are
+// pointers so an unset field (use the default) is distinct from an explicit
+// false/empty; this flattens each to the value the analyzer wants, with the
+// default sitting next to the field it applies to.
+func deref[T any](p *T, def T) T {
+	if p != nil {
+		return *p
+	}
+	return def
+}
+
 func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
-	disabled := false
-	if p.settings.Execargs.Disabled != nil {
-		disabled = *p.settings.Execargs.Disabled
-	}
-	strictTypes := false
-	if p.settings.Execargs.StrictTypes != nil {
-		strictTypes = *p.settings.Execargs.StrictTypes
-	}
-	strictPointers := false
-	if p.settings.Execargs.StrictPointers != nil {
-		strictPointers = *p.settings.Execargs.StrictPointers
-	}
-	structShape := false
-	if p.settings.Execargs.StructShape != nil {
-		structShape = *p.settings.Execargs.StructShape
-	}
-	strictTests := false
-	if p.settings.Execargs.StrictTests != nil {
-		strictTests = *p.settings.Execargs.StrictTests
-	}
-	stringTargetEnabled := false
-	if p.settings.StringTarget.Enabled != nil {
-		stringTargetEnabled = *p.settings.StringTarget.Enabled
-	}
-	stringTargetStrictTests := false
-	if p.settings.StringTarget.StrictTests != nil {
-		stringTargetStrictTests = *p.settings.StringTarget.StrictTests
-	}
-	optionsDiscardDisabled := false
-	if p.settings.OptionsDiscard.Disabled != nil {
-		optionsDiscardDisabled = *p.settings.OptionsDiscard.Disabled
-	}
-	activityTimeoutDisabled := false
-	if p.settings.ActivityTimeout.Disabled != nil {
-		activityTimeoutDisabled = *p.settings.ActivityTimeout.Disabled
-	}
-	activityTimeoutRequireStartToClose := false
-	if p.settings.ActivityTimeout.RequireStartToClose != nil {
-		activityTimeoutRequireStartToClose = *p.settings.ActivityTimeout.RequireStartToClose
-	}
-	futureGetDisabled := false
-	if p.settings.FutureGet.Disabled != nil {
-		futureGetDisabled = *p.settings.FutureGet.Disabled
-	}
-	lossyNumberDisabled := false
-	if p.settings.LossyNumber.Disabled != nil {
-		lossyNumberDisabled = *p.settings.LossyNumber.Disabled
-	}
-	nonSerializableDisabled := false
-	if p.settings.NonSerializable.Disabled != nil {
-		nonSerializableDisabled = *p.settings.NonSerializable.Disabled
-	}
-	nonSerializableEmptyStruct := false
-	if p.settings.NonSerializable.EmptyStruct != nil {
-		nonSerializableEmptyStruct = *p.settings.NonSerializable.EmptyStruct
-	}
-	continueAsNewDisabled := false
-	if p.settings.ContinueAsNew.Disabled != nil {
-		continueAsNewDisabled = *p.settings.ContinueAsNew.Disabled
-	}
-	sensitiveArgsEnabled := false
-	if p.settings.SensitiveArgs.Enabled != nil {
-		sensitiveArgsEnabled = *p.settings.SensitiveArgs.Enabled
-	}
-	sensitiveArgsPattern := ""
-	if p.settings.SensitiveArgs.Pattern != nil {
-		sensitiveArgsPattern = *p.settings.SensitiveArgs.Pattern
-	}
-	optionsContextDisabled := false
-	if p.settings.OptionsContext.Disabled != nil {
-		optionsContextDisabled = *p.settings.OptionsContext.Disabled
-	}
-	workerOptionsDisabled := false
-	if p.settings.WorkerOptions.Disabled != nil {
-		workerOptionsDisabled = *p.settings.WorkerOptions.Disabled
-	}
-	workerOptionsRequireOptions := false
-	if p.settings.WorkerOptions.RequireOptions != nil {
-		workerOptionsRequireOptions = *p.settings.WorkerOptions.RequireOptions
-	}
-	workflowStateDisabled := false
-	if p.settings.WorkflowState.Disabled != nil {
-		workflowStateDisabled = *p.settings.WorkflowState.Disabled
-	}
-	workflowLoggerEnabled := false
-	if p.settings.WorkflowLogger.Enabled != nil {
-		workflowLoggerEnabled = *p.settings.WorkflowLogger.Enabled
-	}
+	s := p.settings
 	return []*analysis.Analyzer{
 		execargs.NewAnalyzer(execargs.Settings{
-			Disabled:       disabled,
-			StrictTypes:    strictTypes,
-			StrictPointers: strictPointers,
-			StructShape:    structShape,
-			StrictTests:    strictTests,
+			Disabled:       deref(s.Execargs.Disabled, false),
+			StrictTypes:    deref(s.Execargs.StrictTypes, false),
+			StrictPointers: deref(s.Execargs.StrictPointers, false),
+			StructShape:    deref(s.Execargs.StructShape, false),
+			StrictTests:    deref(s.Execargs.StrictTests, false),
 		}),
 		stringtarget.NewAnalyzer(stringtarget.Settings{
-			Enabled:     stringTargetEnabled,
-			StrictTests: stringTargetStrictTests,
+			Enabled:     deref(s.StringTarget.Enabled, false),
+			StrictTests: deref(s.StringTarget.StrictTests, false),
 		}),
 		optionsdiscard.NewAnalyzer(optionsdiscard.Settings{
-			Disabled: optionsDiscardDisabled,
+			Disabled: deref(s.OptionsDiscard.Disabled, false),
 		}),
 		activitytimeout.NewAnalyzer(activitytimeout.Settings{
-			Disabled:            activityTimeoutDisabled,
-			RequireStartToClose: activityTimeoutRequireStartToClose,
+			Disabled:            deref(s.ActivityTimeout.Disabled, false),
+			RequireStartToClose: deref(s.ActivityTimeout.RequireStartToClose, false),
 		}),
 		futureget.NewAnalyzer(futureget.Settings{
-			Disabled: futureGetDisabled,
+			Disabled: deref(s.FutureGet.Disabled, false),
 		}),
 		lossynumber.NewAnalyzer(lossynumber.Settings{
-			Disabled: lossyNumberDisabled,
+			Disabled: deref(s.LossyNumber.Disabled, false),
 		}),
 		nonserializable.NewAnalyzer(nonserializable.Settings{
-			Disabled:    nonSerializableDisabled,
-			EmptyStruct: nonSerializableEmptyStruct,
+			Disabled:    deref(s.NonSerializable.Disabled, false),
+			EmptyStruct: deref(s.NonSerializable.EmptyStruct, false),
 		}),
 		continueasnew.NewAnalyzer(continueasnew.Settings{
-			Disabled: continueAsNewDisabled,
+			Disabled: deref(s.ContinueAsNew.Disabled, false),
 		}),
 		sensitiveargs.NewAnalyzer(sensitiveargs.Settings{
-			Enabled: sensitiveArgsEnabled,
-			Pattern: sensitiveArgsPattern,
+			Enabled: deref(s.SensitiveArgs.Enabled, false),
+			Pattern: deref(s.SensitiveArgs.Pattern, ""),
 		}),
 		optionscontext.NewAnalyzer(optionscontext.Settings{
-			Disabled: optionsContextDisabled,
+			Disabled: deref(s.OptionsContext.Disabled, false),
 		}),
 		workeroptions.NewAnalyzer(workeroptions.Settings{
-			Disabled:       workerOptionsDisabled,
-			RequireOptions: workerOptionsRequireOptions,
+			Disabled:       deref(s.WorkerOptions.Disabled, false),
+			RequireOptions: deref(s.WorkerOptions.RequireOptions, false),
 		}),
 		workflowstate.NewAnalyzer(workflowstate.Settings{
-			Disabled: workflowStateDisabled,
+			Disabled: deref(s.WorkflowState.Disabled, false),
 		}),
 		workflowlogger.NewAnalyzer(workflowlogger.Settings{
-			Enabled: workflowLoggerEnabled,
+			Enabled: deref(s.WorkflowLogger.Enabled, false),
 		}),
 		// Future Temporal analyzers (e.g. registration coverage, retry-policy
 		// sanity, non-determinism heuristics) plug in here.

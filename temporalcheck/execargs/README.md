@@ -41,7 +41,7 @@ The arity check is always on; the others are independent opt-in layers.
 // type PayParams struct { Amount int; Note string }
 
 workflow.ExecuteActivity(ctx, a.Charge, &PayParams{Amount: 10})
-// strict-struct-shape: sends *PayParams, target wants *ChargeParams — drops {Note} and leaves {Currency} unset
+// strict-struct-shape: sends *PayParams, target wants *ChargeParams -- drops {Note} and leaves {Currency} unset
 ```
 
 ### strict-tests example

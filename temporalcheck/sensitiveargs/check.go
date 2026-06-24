@@ -14,7 +14,7 @@ const tagSensitive = "sensitive"
 
 // explainSensitive is the shared tail of the diagnostic: why a matching name is a
 // concern and what to do about it.
-const explainSensitive = "Temporal records arguments in durable workflow history — pass an opaque reference and fetch the secret inside the activity instead"
+const explainSensitive = "Temporal records arguments in durable workflow history -- pass an opaque reference and fetch the secret inside the activity instead"
 
 // entry describes one Execute* entry point: how the diagnostic names the target,
 // whether the target is a workflow (leading workflow.Context, always injected) or

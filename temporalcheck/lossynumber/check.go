@@ -13,7 +13,7 @@ import (
 const tagLossyTypes = "lossy-types"
 
 // explain is the shared tail of every diagnostic.
-const explain = "Temporal's JSON converter decodes numbers as float64 and silently loses int64 precision past 2^53 — use a concrete type"
+const explain = "Temporal's JSON converter decodes numbers as float64 and silently loses int64 precision past 2^53 -- use a concrete type"
 
 // entry describes one Execute* entry point.
 type entry struct {

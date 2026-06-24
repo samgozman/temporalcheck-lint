@@ -40,10 +40,10 @@ func Workflow(ctx workflow.Context) error {
 	_ = workflow.ExecuteActivity(ctx, a.NeedWant, &Send{})
 
 	// Incompatible shared field: still a strict-types error.
-	_ = workflow.ExecuteActivity(ctx, a.NeedWant, &Conflict{}) // want `ExecuteActivity: arg 1 of "NeedWant" sends \*structshapeoff.Conflict, target wants \*structshapeoff.Want — field "ID" is incompatible \(int vs string\) \(strict-types\)`
+	_ = workflow.ExecuteActivity(ctx, a.NeedWant, &Conflict{}) // want `ExecuteActivity: arg 1 of "NeedWant" sends \*structshapeoff.Conflict, target wants \*structshapeoff.Want -- field "ID" is incompatible \(int vs string\) \(strict-types\)`
 
 	// No fields in common: still a strict-types error.
-	_ = workflow.ExecuteActivity(ctx, a.NeedWant, &Unrelated{}) // want `ExecuteActivity: arg 1 of "NeedWant" sends \*structshapeoff.Unrelated, target wants \*structshapeoff.Want — no fields in common \(strict-types\)`
+	_ = workflow.ExecuteActivity(ctx, a.NeedWant, &Unrelated{}) // want `ExecuteActivity: arg 1 of "NeedWant" sends \*structshapeoff.Unrelated, target wants \*structshapeoff.Want -- no fields in common \(strict-types\)`
 
 	return nil
 }

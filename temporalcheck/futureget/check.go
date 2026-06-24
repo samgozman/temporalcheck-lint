@@ -26,6 +26,8 @@ var receiverTypes = map[string][]string{
 	"EncodedValue":        {temporalsdk.ConverterPkg},
 }
 
+var errorType = types.Universe.Lookup("error").Type()
+
 // checkDiscarded reports call when it is a .Get on one of the Temporal receiver
 // types whose returned error is being thrown away, after honoring //nolint.
 func (c *checker) checkDiscarded(pass *analysis.Pass, nolint nolint.Info, call *ast.CallExpr) {
@@ -42,16 +44,40 @@ func (c *checker) checkDiscarded(pass *analysis.Pass, nolint nolint.Info, call *
 		return
 	}
 
-	// Honor //nolint directives ourselves so suppression works the same way in
-	// standalone/analysistest runs, not only under golangci-lint. Checked after
-	// confirming this is a call we flag, so unrelated calls cost nothing.
-	if nolint.Suppresses(pass.Fset, call) {
-		return
-	}
+	// We matched on the receiver type, not the method signature, so confirm the
+	// Get actually returns an error before claiming one is discarded. The three
+	// SDK receiver types' Get all return error today; this guards against a future
+	// signature change (or a receiver type whose Get shape differs) reporting a
+	// nonexistent error.
+	if returnsError(pass.TypesInfo.TypeOf(call.Fun)) {
+		// Honor //nolint directives ourselves so suppression works the same way in
+		// standalone/analysistest runs, not only under golangci-lint. Checked after
+		// confirming this is a call we flag, so unrelated calls cost nothing.
+		if nolint.Suppresses(pass.Fset, call) {
+			return
+		}
 
-	pass.Reportf(call.Pos(),
-		"Get: the returned error from %s.Get is discarded; check it or assign it to a variable you inspect (%s)",
-		typeName, tagFutureGet)
+		pass.Reportf(call.Pos(),
+			"Get: the returned error from %s.Get is discarded; check it or assign it to a variable you inspect (%s)",
+			typeName, tagFutureGet)
+	}
+}
+
+// returnsError reports whether t is a function signature whose final result is
+// the built-in error. futureget matches the Get call by receiver type, so this
+// confirms the matched method's signature actually returns an error before we
+// claim one is being discarded.
+func returnsError(t types.Type) bool {
+	sig, ok := t.(*types.Signature)
+	if !ok {
+		return false
+	}
+	res := sig.Results()
+	if res.Len() == 0 {
+		return false
+	}
+	last := res.At(res.Len() - 1).Type()
+	return types.Identical(last, errorType)
 }
 
 // receiverTypeName returns the matched receiver type name -- "Future",
