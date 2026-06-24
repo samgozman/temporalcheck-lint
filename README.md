@@ -1,5 +1,8 @@
 # temporalcheck-lint
 
+[![CI](https://github.com/samgozman/temporalcheck-lint/actions/workflows/ci.yml/badge.svg)](https://github.com/samgozman/temporalcheck-lint/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/samgozman/temporalcheck-lint.svg)](https://pkg.go.dev/github.com/samgozman/temporalcheck-lint)
+
 A [golangci-lint](https://golangci-lint.run) module plugin for static analysis of [Temporal](https://temporal.io) Go SDK code.
 
 Temporal's APIs take targets and arguments as `interface{}`, erasing compile-time safety. This plugin recovers those checks statically, catching bugs that only surface at run time.
