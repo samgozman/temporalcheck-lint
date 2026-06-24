@@ -1,20 +1,6 @@
-// Package activitytimeout implements a static check for the Temporal Go SDK.
-//
-// Activity options carry the timeouts that bound an activity execution. Temporal
-// requires at least one of two of them -- StartToCloseTimeout or
-// ScheduleToCloseTimeout -- on every activity; without either, the activity is
-// rejected at run time:
-//
-//	ao := workflow.ActivityOptions{TaskQueue: "greetings"} // no timeout set
-//	ctx = workflow.WithActivityOptions(ctx, ao)
-//	workflow.ExecuteActivity(ctx, a.Greet)                 // fails at run time
-//
-// The Go idiom is a workflow.ActivityOptions{...} (or LocalActivityOptions)
-// composite literal fed to WithActivityOptions before ExecuteActivity, so the
-// mistake is visible in the literal itself. This analyzer inspects those literals
-// and flags any that set fields but neither required timeout, so the bug is caught
-// at lint time. It is errcheck-style: pure AST + types, near-zero false positives,
-// so it is on by default.
+// Package activitytimeout flags ActivityOptions/LocalActivityOptions literals
+// that set fields but no required timeout (StartToCloseTimeout or ScheduleToCloseTimeout),
+// causing the activity to be rejected at run time.
 package activitytimeout
 
 import (
@@ -24,30 +10,15 @@ import (
 	"golang.org/x/tools/go/analysis"
 )
 
-// The diagnostic tags name the check that produced each message.
 const (
-	// tagRequiredTimeout is the always-on check: neither required timeout set.
-	tagRequiredTimeout = "required-timeout"
-	// tagRequireStartToClose is the opt-in sub-rule: ScheduleToCloseTimeout set
-	// without StartToCloseTimeout.
+	tagRequiredTimeout     = "required-timeout"
 	tagRequireStartToClose = "require-start-to-close"
 )
 
 // Settings configures the activitytimeout analyzer.
 type Settings struct {
-	// Disabled turns the analyzer off entirely; it reports nothing. The check is
-	// on by default: an activity with neither required timeout is always rejected
-	// at run time, never a deliberate pattern, so there is nothing to opt into.
-	Disabled bool
-
-	// RequireStartToClose opts into also flagging a literal that sets
-	// ScheduleToCloseTimeout but not StartToCloseTimeout. Such a literal is accepted
-	// at run time (a required timeout is present), but ScheduleToClose bounds only
-	// the whole activity across retries, leaving a single attempt unbounded; the
-	// recommended practice is to always bound an attempt with StartToCloseTimeout.
-	// Off by default: schedule-to-close-only is a legitimate choice, so this is a
-	// nudge to opt into, not a baseline.
-	RequireStartToClose bool
+	Disabled            bool
+	RequireStartToClose bool // also flag ScheduleToCloseTimeout-only literals (no StartToCloseTimeout)
 }
 
 // NewAnalyzer builds the activitytimeout analyzer for the given settings.
@@ -61,8 +32,7 @@ func NewAnalyzer(settings Settings) *analysis.Analyzer {
 	}
 }
 
-// checker threads the analyzer settings through the AST walk so the analyzer
-// stays free of package-level mutable state.
+// checker threads the analyzer settings through the AST walk.
 type checker struct {
 	disabled            bool
 	requireStartToClose bool
@@ -75,9 +45,6 @@ func (c *checker) run(pass *analysis.Pass) (any, error) {
 	for _, file := range pass.Files {
 		nolint := nolint.Collect(pass.Fset, file)
 		ast.Inspect(file, func(n ast.Node) bool {
-			// Composite literals are visited wherever they appear -- including the
-			// inner literal of &workflow.ActivityOptions{...} and the elided element
-			// literals of a []workflow.ActivityOptions{{...}} -- so each is checked.
 			if lit, ok := n.(*ast.CompositeLit); ok {
 				c.checkLiteral(pass, nolint, lit)
 			}
@@ -87,31 +54,21 @@ func (c *checker) run(pass *analysis.Pass) (any, error) {
 	return nil, nil
 }
 
-// checkLiteral reports lit when it is an ActivityOptions/LocalActivityOptions
-// literal that sets fields but no required timeout, after honoring //nolint.
+// checkLiteral reports an ActivityOptions/LocalActivityOptions literal with no required timeout.
 func (c *checker) checkLiteral(pass *analysis.Pass, nolint nolint.Info, lit *ast.CompositeLit) {
-	// Resolve via the type system (not the source text), so aliased imports of the
-	// workflow package still match.
+	// Resolve via the type system so aliased imports match.
 	name, ok := optionTypeName(pass.TypesInfo.TypeOf(lit))
 	if !ok {
 		return
 	}
 
-	// Empty and positional literals are deliberately skipped (see keyedFields):
-	// an empty literal is typically populated field-by-field afterwards, and a
-	// positional one can't be mapped to field names without the struct layout.
+	// Empty and positional literals are skipped (see keyedFields).
 	fields, ok := keyedFields(lit)
 	if !ok {
 		return
 	}
 
-	// Honor //nolint ourselves so suppression works the same way in
-	// standalone/analysistest runs, not only under golangci-lint. The two reports
-	// below are mutually exclusive (a literal missing both required timeouts cannot
-	// also be schedule-to-close-only), so a single directive on the literal's line
-	// suppresses whichever one fires. Checked lazily, only once we know a report is
-	// due, so unrelated literals cost nothing.
-
+	// The two reports are mutually exclusive, so one //nolint suppresses whichever fires.
 	if !hasRequiredTimeout(fields) {
 		if nolint.Suppresses(pass.Fset, lit) {
 			return
@@ -122,8 +79,6 @@ func (c *checker) checkLiteral(pass *analysis.Pass, nolint nolint.Info, lit *ast
 		return
 	}
 
-	// The literal has a required timeout. The opt-in sub-rule nudges bounding each
-	// attempt with StartToCloseTimeout when only ScheduleToCloseTimeout is set.
 	if c.requireStartToClose && scheduleToCloseOnly(fields) {
 		if nolint.Suppresses(pass.Fset, lit) {
 			return

@@ -1,37 +1,24 @@
-// Package temporalsdk centralizes how the analyzers recognize the Temporal Go
-// SDK through go/types. The analyzers never import the SDK; they match calls and
-// types by package path, so the SDK's import paths and the type-matching helpers
-// that resolve them live here once instead of being copied into each analyzer.
+// Package temporalsdk centralizes how analyzers recognize the Temporal Go SDK
+// through go/types. Analyzers match by package path, never by importing the SDK.
 package temporalsdk
 
 import "go/types"
 
 // SDK (and stdlib context) import paths the analyzers match against.
 const (
-	// WorkflowPkg is the public workflow package.
-	WorkflowPkg = "go.temporal.io/sdk/workflow"
-	// InternalPkg is where the SDK actually declares the workflow types. The
-	// public workflow.Context is published as `type Context = internal.Context`,
-	// so depending on the gotypesalias mode a parameter's resolved type surfaces
-	// in this package, not in WorkflowPkg. Matchers must accept both.
-	InternalPkg = "go.temporal.io/sdk/internal"
-	// ClientPkg is where the SDK declares the Client interface directly (unlike
-	// the aliased Context type), so client.ExecuteWorkflow's receiver resolves to
-	// client.Client. InternalPkg.Client is a separate interface client.Client
-	// implements; matchers accept it too, defensively.
-	ClientPkg = "go.temporal.io/sdk/client"
-	// ConverterPkg holds converter.EncodedValue and friends.
+	WorkflowPkg  = "go.temporal.io/sdk/workflow"
+	// InternalPkg is where the SDK declares its types. workflow.Context is published as
+	// `type Context = internal.Context`, so depending on gotypesalias mode the resolved
+	// type may surface here; matchers must accept both.
+	InternalPkg  = "go.temporal.io/sdk/internal"
+	ClientPkg    = "go.temporal.io/sdk/client"
 	ConverterPkg = "go.temporal.io/sdk/converter"
-	// WorkerPkg holds worker.Options and the worker constructors.
-	WorkerPkg = "go.temporal.io/sdk/worker"
-	// ContextPkg is the standard library context package, whose Context is the
-	// first parameter Temporal injects into an activity (workflows take
-	// workflow.Context instead).
-	ContextPkg = "context"
+	WorkerPkg    = "go.temporal.io/sdk/worker"
+	// ContextPkg is the stdlib context; activities take context.Context, not workflow.Context.
+	ContextPkg   = "context"
 )
 
-// Named reports whether t is the named type pkgPath.name. It accepts both defined
-// types and aliases, since both carry a *types.TypeName.
+// Named reports whether t is the named type pkgPath.name (defined type or alias).
 func Named(t types.Type, pkgPath, name string) bool {
 	var obj *types.TypeName
 	switch n := t.(type) {
@@ -54,8 +41,7 @@ func Deref(t types.Type) types.Type {
 	return t
 }
 
-// IsReceiver reports whether fn is a method whose receiver is (a pointer to) the
-// named type pkgPath.name.
+// IsReceiver reports whether fn is a method whose receiver is (a pointer to) pkgPath.name.
 func IsReceiver(fn *types.Func, pkgPath, name string) bool {
 	sig, ok := fn.Type().(*types.Signature)
 	if !ok || sig.Recv() == nil {
@@ -64,10 +50,9 @@ func IsReceiver(fn *types.Func, pkgPath, name string) bool {
 	return Named(Deref(sig.Recv().Type()), pkgPath, name)
 }
 
-// IsWorkflowContext reports whether t is workflow.Context. The SDK publishes it
-// as `type Context = internal.Context`, so depending on the gotypesalias mode t
-// is either the alias (named in WorkflowPkg) or the resolved internal named type
-// (named in InternalPkg); both count as the injected context.
+// IsWorkflowContext reports whether t is workflow.Context.
+// The SDK publishes it as `type Context = internal.Context`, so t may resolve
+// to either the alias (WorkflowPkg) or the underlying named type (InternalPkg).
 func IsWorkflowContext(t types.Type) bool {
 	if t == nil {
 		return false
@@ -78,10 +63,8 @@ func IsWorkflowContext(t types.Type) bool {
 	return Named(t, WorkflowPkg, "Context")
 }
 
-// SkipCount returns how many leading parameters Temporal injects at run time --
-// the context the caller must not supply. A workflow takes workflow.Context, an
-// activity takes the standard context.Context; either counts as one injected
-// parameter when present as the first one.
+// SkipCount returns how many leading parameters Temporal injects at run time (0 or 1):
+// a workflow takes workflow.Context; an activity takes context.Context.
 func SkipCount(sig *types.Signature, isWorkflow bool) int {
 	if sig.Params().Len() == 0 {
 		return 0

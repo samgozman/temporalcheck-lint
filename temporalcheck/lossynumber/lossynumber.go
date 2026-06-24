@@ -1,20 +1,8 @@
-// Package lossynumber implements a static check for the Temporal Go SDK.
-//
-// Temporal serializes activity and workflow arguments and results through its
-// DataConverter, whose default is JSON. encoding/json decodes every JSON number
-// into a float64 whenever the destination Go type is interface{}, and a float64
-// cannot represent integers past 2^53 exactly. So an int64 carried through a
-// dynamically-typed parameter or return -- interface{}/any, map[string]any,
-// []any -- round-trips as a float64 and silently loses precision:
-//
-//	var n int64 = 9007199254740993 // 2^53 + 1
-//	// marshaled and decoded into an `any` parameter: becomes 9007199254740992.
-//
-// This analyzer resolves the function referenced by each Execute* call to its
-// real signature and flags any top-level parameter or (non-error) return whose
-// type is one of those lossy dynamic types. It deliberately looks only at the
-// top level -- a struct that merely contains an `any` field is not flagged --
-// to stay false-positive-free. The fix is to use a concrete type.
+// Package lossynumber flags interface{}/any, map[string]any and []any as
+// Temporal activity/workflow parameter or return types: Temporal's JSON
+// DataConverter decodes numbers into float64, silently losing int64 precision
+// past 2^53. Only the top-level parameter/return type is checked to avoid
+// false positives.
 package lossynumber
 
 import (
@@ -27,9 +15,6 @@ import (
 
 // Settings configures the lossynumber analyzer.
 type Settings struct {
-	// Disabled turns the analyzer off entirely; it reports nothing. The check is
-	// on by default: a dynamically-typed number silently corrupts past 2^53, which
-	// is a latent data-loss bug, so there is nothing to opt into.
 	Disabled bool
 }
 
@@ -44,8 +29,7 @@ func NewAnalyzer(settings Settings) *analysis.Analyzer {
 	}
 }
 
-// checker threads the analyzer settings through the AST walk so the analyzer
-// stays free of package-level mutable state.
+// checker threads the analyzer settings through the AST walk.
 type checker struct {
 	disabled bool
 }

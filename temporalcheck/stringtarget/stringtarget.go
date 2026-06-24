@@ -1,19 +1,7 @@
-// Package stringtarget implements an opt-in static check for the Temporal Go SDK.
-//
-// Temporal lets you launch an activity or child workflow by its registered
-// string name -- workflow.ExecuteActivity(ctx, "MyActivity", args...) -- instead
-// of by a reference to the Go function. That string is opaque: it cannot be
-// resolved to a signature at compile time, so the number and types of the
-// trailing arguments go unchecked, and a typo in the name fails only at run
-// time. Worse, it blinds the execargs analyzer, which silently skips any call
-// whose target is not a resolvable function value.
-//
-// This analyzer flags those call sites so they can be refactored to pass the
-// function reference instead. Doing so is better on its own terms -- the name is
-// then derived from the function rather than duplicated as a fragile string --
-// and it is what lets the rest of this linter verify the call's arguments.
-//
-// The check is off by default; enable it via settings.stringtarget.enabled.
+// Package stringtarget flags Temporal Execute*/Signal* calls that name the target
+// by its registered string instead of passing the function reference. String
+// targets can't be checked statically and blind the execargs analyzer. The check
+// is opt-in (off by default).
 package stringtarget
 
 import (
@@ -67,18 +55,8 @@ var testEntryPoints = map[string]bool{
 
 // Settings configures the stringtarget analyzer.
 type Settings struct {
-	// Enabled turns the check on for production Execute* calls. It is off by
-	// default: naming a target by string is a legitimate, sometimes necessary
-	// pattern (e.g. an activity implemented in another service or language), so
-	// flagging it is opt-in.
-	Enabled bool
-
-	// StrictTests extends the check to Temporal testsuite mock setups --
-	// (*testsuite.TestWorkflowEnvironment).OnActivity / .OnWorkflow named by
-	// string. It is an opt-in layer on top of the production check, gated by
-	// Enabled: with Enabled off the whole analyzer is silent regardless of this
-	// flag. Off by default.
-	StrictTests bool
+	Enabled     bool // master switch (default false)
+	StrictTests bool // also check On* mock targets (requires Enabled)
 }
 
 // NewAnalyzer builds the stringtarget analyzer for the given settings.
@@ -92,17 +70,13 @@ func NewAnalyzer(settings Settings) *analysis.Analyzer {
 	}
 }
 
-// checker threads the analyzer settings through the AST walk so the analyzer
-// stays free of package-level mutable state.
+// checker threads the analyzer settings through the AST walk.
 type checker struct {
 	enabled     bool
 	strictTests bool
 }
 
 func (c *checker) run(pass *analysis.Pass) (any, error) {
-	// Enabled is the master switch: with it off the analyzer reports nothing,
-	// including the StrictTests test-mock check, which layers on top of the
-	// production check rather than running independently.
 	if !c.enabled {
 		return nil, nil
 	}
@@ -124,17 +98,12 @@ func (c *checker) checkCall(pass *analysis.Pass, nolint nolint.Info, call *ast.C
 		return
 	}
 
-	// Resolve via Uses (not the source text), so aliased imports of the
-	// workflow/testsuite packages still match.
+	// Resolve via Uses so aliased imports still match.
 	fn, ok := pass.TypesInfo.Uses[sel.Sel].(*types.Func)
 	if !ok || fn.Pkg() == nil {
 		return
 	}
-	// run() already gated on Enabled, so the production check below is always
-	// active here; StrictTests is the opt-in layer for test mocks on top of it.
 	if idx, ok := targetIndex(fn); ok {
-		// A compiling call always has the target present, but guard the index so a
-		// malformed/partial AST can't panic.
 		if idx < len(call.Args) {
 			c.report(pass, nolint, call, fn.Name(), call.Args[idx], tagStringTarget)
 		}
@@ -147,10 +116,7 @@ func (c *checker) checkCall(pass *analysis.Pass, nolint nolint.Info, call *ast.C
 }
 
 // targetIndex reports the argument index of the workflow/activity target for fn,
-// if fn is an entry point this analyzer inspects. workflow.* are package
-// functions; the client methods are matched by name and receiver, since the SDK
-// declares them on the client.Client interface rather than in a package we can
-// match by path.
+// if fn is an entry point this analyzer inspects.
 func targetIndex(fn *types.Func) (int, bool) {
 	if fn.Pkg().Path() == temporalsdk.WorkflowPkg {
 		idx, ok := workflowEntries[fn.Name()]
@@ -166,15 +132,11 @@ func targetIndex(fn *types.Func) (int, bool) {
 // report flags target when it is named by string, after honoring //nolint. The
 // tag distinguishes a production Execute* call from a testsuite mock setup.
 func (c *checker) report(pass *analysis.Pass, nolint nolint.Info, call *ast.CallExpr, entry string, target ast.Expr, tag string) {
-	// Honor //nolint directives ourselves so suppression works the same way in
-	// standalone/analysistest runs, not only under golangci-lint. Checked after
-	// confirming this is a call we inspect, so unrelated calls cost nothing.
+	// Honor //nolint after confirming this is a call we inspect.
 	if nolint.Suppresses(pass.Fset, call) {
 		return
 	}
 	if !isStringType(pass.TypesInfo.TypeOf(target)) {
-		// A function reference (or any non-string value) is exactly what we want
-		// callers to pass; execargs takes it from here.
 		return
 	}
 

@@ -17,26 +17,15 @@ const (
 	tagRequireOptions = "require-options"
 )
 
-// The worker options struct is declared in the SDK's internal package as
-// WorkerOptions and re-exported from worker as `type Options =
-// internal.WorkerOptions`, mirroring workflow.Context. We match by path through
-// go/types -- resolving the alias to its internal definition -- so aliased imports
-// resolve and we never import the SDK. The two packages name the type differently
-// (worker.Options vs internal.WorkerOptions), so each path checks its own name.
-// panicFields are the two options fields Temporal documents as unable to hold the
-// value 1: the pollers alternate between sticky and non-sticky queues, so a single
-// one deadlocks the worker, which panics on start. The activity counterparts carry
-// no such restriction, so they are deliberately absent here.
+// panicFields are the two workflow-task options fields Temporal documents as unable
+// to hold value 1: a single poller deadlocks the worker on start.
 var panicFields = []string{
 	"MaxConcurrentWorkflowTaskExecutionSize",
 	"MaxConcurrentWorkflowTaskPollers",
 }
 
-// concurrencyFields are the five worker.Options knobs that bound a worker's
-// resource use. require-options is satisfied by any one of them being set
-// (value-irrelevant): requiring a specific field would falsely flag an
-// activity-only or local-activity-only worker that correctly sets just its own
-// knob, so "sets none of the five" is the unambiguous failure mode.
+// concurrencyFields are the five worker.Options knobs that bound resource use.
+// require-options is satisfied by any one of them being set.
 var concurrencyFields = []string{
 	"MaxConcurrentActivityExecutionSize",
 	"MaxConcurrentWorkflowTaskExecutionSize",

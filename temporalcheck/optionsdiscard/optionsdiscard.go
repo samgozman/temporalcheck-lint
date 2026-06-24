@@ -1,21 +1,7 @@
-// Package optionsdiscard implements a static check for the Temporal Go SDK.
-//
-// workflow.WithActivityOptions / WithLocalActivityOptions / WithChildOptions
-// do not mutate the context they receive; each returns a *new* context that
-// carries the options:
-//
-//	func WithActivityOptions(ctx Context, options ActivityOptions) Context
-//
-// The classic mistake is to forget the `ctx =`:
-//
-//	workflow.WithActivityOptions(ctx, ao) // result thrown away
-//	workflow.ExecuteActivity(ctx, a.Greet) // runs with the OLD ctx -- no options
-//
-// The options silently never apply, and the activity blows up at run time with a
-// missing-timeout error. This analyzer flags any such call whose returned context
-// is discarded -- used as a bare expression statement, or assigned to the blank
-// identifier -- so the bug is caught at lint time instead. It is errcheck-style:
-// pure AST + types, and near-zero false positives, so it is on by default.
+// Package optionsdiscard flags workflow.WithActivityOptions / WithLocalActivityOptions
+// / WithChildOptions calls whose returned context is discarded (bare statement or
+// _ =). Each With* function returns a new context; forgetting `ctx =` means the
+// options silently never apply.
 package optionsdiscard
 
 import (
@@ -47,9 +33,6 @@ var entryPoints = map[string]bool{
 
 // Settings configures the optionsdiscard analyzer.
 type Settings struct {
-	// Disabled turns the analyzer off entirely; it reports nothing. The check is
-	// on by default: discarding a With*Options result is always a bug, never a
-	// legitimate pattern, so there is nothing to opt into.
 	Disabled bool
 }
 
@@ -64,8 +47,7 @@ func NewAnalyzer(settings Settings) *analysis.Analyzer {
 	}
 }
 
-// checker threads the analyzer settings through the AST walk so the analyzer
-// stays free of package-level mutable state.
+// checker threads the analyzer settings through the AST walk.
 type checker struct {
 	disabled bool
 }
@@ -79,15 +61,10 @@ func (c *checker) run(pass *analysis.Pass) (any, error) {
 		ast.Inspect(file, func(n ast.Node) bool {
 			switch s := n.(type) {
 			case *ast.ExprStmt:
-				// A bare call statement throws the result away entirely -- the
-				// classic "forgot the ctx =" shape.
 				if call, ok := s.X.(*ast.CallExpr); ok {
 					c.checkDiscarded(pass, nolint, call)
 				}
 			case *ast.AssignStmt:
-				// `_ = workflow.With...Options(...)` discards the result explicitly.
-				// With*Options is single-valued, so the discard is exactly this
-				// one-to-one blank assignment; anything else keeps the context.
 				if s.Tok == token.ASSIGN && len(s.Lhs) == 1 && len(s.Rhs) == 1 && isBlank(s.Lhs[0]) {
 					if call, ok := s.Rhs[0].(*ast.CallExpr); ok {
 						c.checkDiscarded(pass, nolint, call)
@@ -108,8 +85,7 @@ func (c *checker) checkDiscarded(pass *analysis.Pass, nolint nolint.Info, call *
 		return
 	}
 
-	// Resolve via Uses (not the source text), so aliased imports of the workflow
-	// package still match.
+	// Resolve via Uses so aliased imports still match.
 	fn, ok := pass.TypesInfo.Uses[sel.Sel].(*types.Func)
 	if !ok || fn.Pkg() == nil {
 		return
@@ -118,9 +94,7 @@ func (c *checker) checkDiscarded(pass *analysis.Pass, nolint nolint.Info, call *
 		return
 	}
 
-	// Honor //nolint directives ourselves so suppression works the same way in
-	// standalone/analysistest runs, not only under golangci-lint. Checked after
-	// confirming this is a call we flag, so unrelated calls cost nothing.
+	// Honor //nolint after confirming this is a call we flag.
 	if nolint.Suppresses(pass.Fset, call) {
 		return
 	}

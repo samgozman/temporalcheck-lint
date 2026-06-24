@@ -1,19 +1,7 @@
-// Package workeroptions implements a static check for the Temporal Go SDK.
-//
-// A Temporal worker is configured with a worker.Options struct passed to
-// worker.New. Two of its fields are foot-guns the compiler can't catch:
-//
-//   - MaxConcurrentWorkflowTaskExecutionSize and MaxConcurrentWorkflowTaskPollers
-//     "cannot be 1 and will panic if set to that value" -- the pollers alternate
-//     between sticky and non-sticky queues, so a single poller deadlocks the
-//     worker at boot. A literal 1 there is a guaranteed crash.
-//   - An empty worker.Options leaves the worker on the SDK defaults (1k concurrent
-//     executions, 100k/s) that can overload a self-hosted cluster or a
-//     memory-capped pod.
-//
-// This analyzer inspects worker.Options composite literals (and the literal passed
-// to worker.New) so both are caught at lint time. The panic check is on by
-// default and false-positive-free; the require-options check is opt-in.
+// Package workeroptions flags worker.Options literals that set
+// MaxConcurrentWorkflowTaskExecutionSize or MaxConcurrentWorkflowTaskPollers to 1
+// (a guaranteed worker-boot panic), and optionally worker.New calls whose
+// worker.Options sets no concurrency limits.
 package workeroptions
 
 import (
@@ -25,15 +13,8 @@ import (
 
 // Settings configures the workeroptions analyzer.
 type Settings struct {
-	// Disabled turns the analyzer off entirely; it reports nothing (this also
-	// disables the default-on worker-panic check).
-	Disabled bool
-
-	// RequireOptions opts into flagging a worker.New whose worker.Options literal
-	// sets none of the concurrency-limit fields, so the worker runs on the SDK
-	// defaults. Off by default: an empty worker.Options is a legitimate choice when
-	// the defaults suit the deployment, so this is opt-in.
-	RequireOptions bool
+	Disabled       bool
+	RequireOptions bool // also flag worker.New with no concurrency limits set (opt-in)
 }
 
 // NewAnalyzer builds the workeroptions analyzer for the given settings.
@@ -50,8 +31,7 @@ func NewAnalyzer(settings Settings) *analysis.Analyzer {
 	}
 }
 
-// checker threads the analyzer settings through the AST walk so the analyzer
-// stays free of package-level mutable state.
+// checker threads the analyzer settings through the AST walk.
 type checker struct {
 	disabled       bool
 	requireOptions bool
