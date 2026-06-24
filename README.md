@@ -227,6 +227,28 @@ linters:
 
 </details>
 
+## Editor integration
+
+A custom golangci-lint binary works with your IDE just like the stock one. You
+only have to point the IDE at *your* binary (`./bin/custom-gcl`) instead of the
+one on your `PATH`. Build it first (see [Install](#install)), then configure the IDE.
+
+<details>
+<summary>JetBrains GoLand IDE</summary>
+
+1. Open **Settings → Go → Linters**.
+2. Tick **Execute 'golangci-lint run'** (and **'golangci-lint fmt'** if you
+   want formatting too).
+3. Set **Executable** to the absolute path of your custom binary, e.g.
+   `/path/to/your/project/bin/custom-gcl`.
+4. Tick **Use config** and point it at your `.golangci.yml`.
+5. Click **OK**. `temporalcheck` now shows up in the linters list and its
+   warnings appear inline in the editor and in the **Problems** view.
+
+![GoLand linter settings](docs/goland-linter-settings.png)
+
+</details>
+
 ## Suppressing with `//nolint`
 
 Use the plugin name **`temporalcheck`** (not an analyzer name):
