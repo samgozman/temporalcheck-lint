@@ -92,6 +92,28 @@ temporalcheck-lint/
 └── go.mod
 ```
 
+## Roadmap / not yet built
+
+Ideas that aren't implemented yet — contributions welcome. Open an issue first if
+you want to take one on.
+
+- **Suggested fixes (auto-fix).** Most diagnostics have an obvious mechanical
+  remedy: assign a discarded `With*Options` context back (`ctx = workflow.With…(ctx, o)`),
+  add a missing `StartToCloseTimeout`, replace `log`/`fmt` with `workflow.GetLogger(ctx)`,
+  or check a discarded `Future.Get` / `NewContinueAsNewError` result. golangci-lint
+  surfaces an analyzer's [`SuggestedFixes`](https://pkg.go.dev/golang.org/x/tools/go/analysis#Diagnostic)
+  via `--fix`; none of the analyzers attach them yet.
+- **Interprocedural determinism analysis.** `workflowstate` and `workflowlogger`
+  currently only inspect code lexically inside the workflow function (and its
+  closures), not helper functions it calls. Following calls into same-package helpers
+  would catch a real class of non-determinism the checks miss today.
+- **Dot-import support.** All analyzers match `pkg.Func(...)` selector calls and skip
+  dot-imported SDK calls (`import . ".../workflow"`). Handling the bare-identifier form
+  would close that gap.
+- **More checks.** Candidates noted in `plugin.go`: registration coverage (every
+  registered activity/workflow has a matching definition), retry-policy sanity, and
+  signal/query/update handler checks.
+
 ## Pull requests
 
 - Keep changes small and focused; one behavioral change per PR.

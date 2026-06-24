@@ -1,3 +1,5 @@
+![temporalcheck-lint](docs/header.gif)
+
 # temporalcheck-lint
 
 [![CI](https://github.com/samgozman/temporalcheck-lint/actions/workflows/ci.yml/badge.svg)](https://github.com/samgozman/temporalcheck-lint/actions/workflows/ci.yml)
@@ -19,7 +21,7 @@ workflow.go:42  activity "Charge" parameter 1 has dynamic type any; numbers lose
 workflow.go:48  activity "Stream" parameter 1 has type chan int; DataConverter cannot serialize a channel (unencodable)
 workflow.go:54  NewContinueAsNewError: the continue-as-new error is discarded (continue-as-new)
 workflow.go:60  ExecuteActivity: this ctx is configured with WithChildOptions, not WithActivityOptions (options-context)
-worker.go:14   worker.Options: MaxConcurrentWorkflowTaskPollers must not be 1 — the worker panics on start (worker-panic)
+worker.go:14   worker.Options: MaxConcurrentWorkflowTaskPollers must not be 1 -- the worker panics on start (worker-panic)
 workflow.go:70  mutates package-level variable counter from workflow code (global-mutation)
 workflow.go:76  logging via log in workflow code double-logs on every replay (workflow-logger)
 ```
@@ -102,6 +104,23 @@ resolved to a real signature, while a registered string can't, so this single ch
 unblocks `execargs` (and `lossynumber`, `nonserializable`, `sensitiveargs`, which all
 resolve the target the same way) on every one of those call sites. Once the code is in
 that shape, the rest of the plugin — and your other Go linters — can see far more.
+
+### Known limitations
+
+The analyzers are deliberately conservative — they skip what they can't resolve
+statically rather than risk a false positive — so a clean result is not a proof of
+correctness. In particular:
+
+- **The determinism checks (`workflowstate`, `workflowlogger`) only inspect code
+  written directly inside the workflow function** (including its nested closures, e.g.
+  `workflow.Go` callbacks). They do **not** follow calls into helper functions: a
+  workflow that delegates to `helper(ctx)` where `helper` logs or mutates a package
+  variable is not flagged. Keep determinism-sensitive logic in the workflow function,
+  or review helpers it calls by hand.
+- **Dot-imported SDK calls are out of scope.** Every analyzer matches `pkg.Func(...)`
+  selector calls; if you `import . "go.temporal.io/sdk/workflow"` and call
+  `ExecuteActivity(...)` bare, nothing is flagged. Import the SDK normally (the
+  idiomatic and recommended form) to get full coverage.
 
 ## Install
 
@@ -205,6 +224,28 @@ linters:
             enabled: true                # flag string-named Execute* targets (blinds execargs) (default false)
             strict-tests: true           # also flag string-named OnActivity/OnWorkflow targets (default false)
 ```
+
+</details>
+
+## Editor integration
+
+A custom golangci-lint binary works with your IDE just like the stock one. You
+only have to point the IDE at *your* binary (`./bin/custom-gcl`) instead of the
+one on your `PATH`. Build it first (see [Install](#install)), then configure the IDE.
+
+<details>
+<summary>JetBrains GoLand IDE</summary>
+
+1. Open **Settings → Go → Linters**.
+2. Tick **Execute 'golangci-lint run'** (and **'golangci-lint fmt'** if you
+   want formatting too).
+3. Set **Executable** to the absolute path of your custom binary, e.g.
+   `/path/to/your/project/bin/custom-gcl`.
+4. Tick **Use config** and point it at your `.golangci.yml`.
+5. Click **OK**. `temporalcheck` now shows up in the linters list and its
+   warnings appear inline in the editor and in the **Problems** view.
+
+![GoLand linter settings](docs/goland-linter-settings.png)
 
 </details>
 

@@ -19,7 +19,7 @@ func Charge(ctx context.Context, amount int64) error { ... }
 ```
 
 ```
-workflow.go:21  activity "Charge" parameter 1 has dynamic type any; Temporal's JSON converter decodes numbers as float64 and silently loses int64 precision past 2^53 — use a concrete type (lossy-types)
+workflow.go:21  activity "Charge" parameter 1 has dynamic type any; Temporal's JSON converter decodes numbers as float64 and silently loses int64 precision past 2^53 -- use a concrete type (lossy-types)
 ```
 
 ## Settings

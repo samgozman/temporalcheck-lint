@@ -123,19 +123,19 @@ func (c *checker) reportStructMismatch(pass *analysis.Pass, arg ast.Expr, fnName
 	switch {
 	case d.conflict != nil:
 		if c.strictTypes || c.structShape {
-			c.reportf(pass, arg, "%s: arg %d of %q sends %s, target wants %s — field %q is incompatible (%s vs %s) (%s)",
+			c.reportf(pass, arg, "%s: arg %d of %q sends %s, target wants %s -- field %q is incompatible (%s vs %s) (%s)",
 				fnName, pos, name, typeStr(got), typeStr(want), d.conflict.field,
 				typeStr(d.conflict.got), typeStr(d.conflict.want), tagStrictTypes)
 		}
 	case d.overlap == 0:
 		if c.strictTypes || c.structShape {
-			c.reportf(pass, arg, "%s: arg %d of %q sends %s, target wants %s — no fields in common (%s)",
+			c.reportf(pass, arg, "%s: arg %d of %q sends %s, target wants %s -- no fields in common (%s)",
 				fnName, pos, name, typeStr(got), typeStr(want), tagStrictTypes)
 		}
 	default:
 		// Wire-compatible but distinct: silently drops/zeroes mismatched fields.
 		if c.structShape {
-			c.reportf(pass, arg, "%s: arg %d of %q sends %s, target wants %s — %s (%s)",
+			c.reportf(pass, arg, "%s: arg %d of %q sends %s, target wants %s -- %s (%s)",
 				fnName, pos, name, typeStr(got), typeStr(want), driftPhrase(d), tagStructShape)
 		}
 	}

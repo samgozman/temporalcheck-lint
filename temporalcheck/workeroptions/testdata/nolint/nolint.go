@@ -20,9 +20,9 @@ func Boot() {
 	}
 
 	// Only other linters named: the diagnostic still fires.
-	_ = worker.Options{MaxConcurrentWorkflowTaskPollers: 1} //nolint:gocritic // want `worker.Options: MaxConcurrentWorkflowTaskPollers must not be 1 — the worker panics on start; use 0 for the default or a value >= 2 \(worker-panic\)`
+	_ = worker.Options{MaxConcurrentWorkflowTaskPollers: 1} //nolint:gocritic // want `worker.Options: MaxConcurrentWorkflowTaskPollers must not be 1 -- the worker panics on start; use 0 for the default or a value >= 2 \(worker-panic\)`
 
 	// Names the analyzer rather than the plugin: golangci-lint knows this linter
 	// only as "temporalcheck", so this does not suppress.
-	_ = worker.Options{MaxConcurrentWorkflowTaskPollers: 1} //nolint:workeroptions // want `worker.Options: MaxConcurrentWorkflowTaskPollers must not be 1 — the worker panics on start; use 0 for the default or a value >= 2 \(worker-panic\)`
+	_ = worker.Options{MaxConcurrentWorkflowTaskPollers: 1} //nolint:workeroptions // want `worker.Options: MaxConcurrentWorkflowTaskPollers must not be 1 -- the worker panics on start; use 0 for the default or a value >= 2 \(worker-panic\)`
 }

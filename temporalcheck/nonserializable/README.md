@@ -18,7 +18,7 @@ func Stream(ctx context.Context, batchSize int) error { ... }
 ```
 
 ```
-workflow.go:21  activity "Stream" parameter 1 has type chan int; Temporal's DataConverter cannot serialize a channel or function — use a serializable type (unencodable)
+workflow.go:21  activity "Stream" parameter 1 has type chan int; Temporal's DataConverter cannot serialize a channel or function -- use a serializable type (unencodable)
 ```
 
 ### opt-in: empty-struct
