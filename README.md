@@ -264,6 +264,29 @@ package worker
 
 A directive naming only other linters (`//nolint:gocritic`) does not suppress this plugin. To disable an analyzer project-wide, use its `disabled` setting.
 
+## Running in CI
+
+CI is the same steps as local use: install upstream golangci-lint, build the
+custom binary from `.custom-gcl.yml`, then lint with it. See the
+[`custom` command docs](https://golangci-lint.run/docs/plugins/module-plugins/)
+for details, and this repo's own [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
+for a working example:
+
+```yaml
+- name: Install golangci-lint
+  run: |
+    curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh \
+      | sh -s -- -b "$(go env GOPATH)/bin" v2.12.2
+
+- name: Build the custom binary
+  run: golangci-lint custom   # reads .custom-gcl.yml
+
+- name: Lint
+  run: ./bin/custom-gcl run
+```
+
+Keep the golangci-lint version pinned the same in `.custom-gcl.yml` and your CI.
+
 ## Development
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
