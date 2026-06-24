@@ -1,3 +1,5 @@
+![temporalcheck-lint](docs/header.gif)
+
 # temporalcheck-lint
 
 [![CI](https://github.com/samgozman/temporalcheck-lint/actions/workflows/ci.yml/badge.svg)](https://github.com/samgozman/temporalcheck-lint/actions/workflows/ci.yml)
