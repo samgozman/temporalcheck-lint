@@ -149,8 +149,9 @@ Module plugins are compiled into golangci-lint itself; see the [Module Plugin Sy
 <summary>Full configuration reference</summary>
 
 golangci-lint exposes the plugin as **`temporalcheck`**, and each analyzer has its own
-nested settings block. Every value below is its default, so this block behaves exactly
-like the minimal config above — it's just the full surface, annotated:
+nested settings block. This shows the full surface with **every check turned on** — the
+recommended strict setup. Drop a line to fall back to its default (the comment marks
+which settings are off by default):
 
 ```yaml
 version: "2"
@@ -167,17 +168,17 @@ linters:
         settings:
           execargs:
             disabled: false              # turn the analyzer off without unwiring the plugin
-            strict-types: false          # also verify argument types, not just the count
-            strict-pointers: false       # flag T vs *T mismatches the converter hides
-            strict-struct-shape: false   # flag a different struct passed where one is wanted
-            strict-tests: false          # also check OnActivity/OnWorkflow mock matcher arity
+            strict-types: true           # also verify argument types, not just the count (default false)
+            strict-pointers: true        # flag T vs *T mismatches the converter hides (default false)
+            strict-struct-shape: true    # flag a different struct passed where one is wanted (default false)
+            strict-tests: true           # also check OnActivity/OnWorkflow mock matcher arity (default false)
           optionscontext:
             disabled: false              # flag Execute* using a context built by a conflicting With*Options
           optionsdiscard:
             disabled: false              # flag With*Options calls whose returned context is discarded
           activitytimeout:
             disabled: false              # flag ActivityOptions with no required timeout
-            require-start-to-close: false  # also require StartToCloseTimeout when only ScheduleToClose is set
+            require-start-to-close: true # also require StartToCloseTimeout when only ScheduleToClose is set (default false)
           futureget:
             disabled: false              # flag a Future.Get whose returned error is discarded
           continueasnew:
@@ -186,20 +187,20 @@ linters:
             disabled: false              # flag any/map[string]any/[]any params that lose number precision
           nonserializable:
             disabled: false              # flag chan/func params the DataConverter cannot serialize
-            empty-struct: false          # also flag a struct with no exported fields (encodes to {})
+            empty-struct: true           # also flag a struct with no exported fields (encodes to {}) (default false)
           workeroptions:
             disabled: false              # flag worker.Options that panic the worker on start
-            require-options: false       # also flag worker.New with no concurrency limits set
+            require-options: true        # also flag worker.New with no concurrency limits set (default false)
           workflowstate:
             disabled: false              # flag mutation of package-level vars from workflow code
           sensitiveargs:
-            enabled: false               # opt in: flag params/fields whose name looks sensitive (PII/secrets)
+            enabled: true                # flag params/fields whose name looks sensitive (PII/secrets) (default false)
             pattern: "(?i)cvv|pan|card.?number|password|secret|ssn|token"  # names matched (unanchored)
           workflowlogger:
-            enabled: false               # opt in: flag non-replay-aware logging in workflow code
+            enabled: true                # flag non-replay-aware logging in workflow code (default false)
           stringtarget:
-            enabled: false               # opt in: flag string-named Execute* targets (blinds execargs)
-            strict-tests: false          # also flag string-named OnActivity/OnWorkflow targets
+            enabled: true                # flag string-named Execute* targets (blinds execargs) (default false)
+            strict-tests: true           # also flag string-named OnActivity/OnWorkflow targets (default false)
 ```
 
 </details>
