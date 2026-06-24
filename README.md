@@ -4,6 +4,7 @@
 
 [![CI](https://github.com/samgozman/temporalcheck-lint/actions/workflows/ci.yml/badge.svg)](https://github.com/samgozman/temporalcheck-lint/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/samgozman/temporalcheck-lint.svg)](https://pkg.go.dev/github.com/samgozman/temporalcheck-lint)
+[![codecov](https://codecov.io/gh/samgozman/temporalcheck-lint/graph/badge.svg?token=IPqUqP1G9f)](https://codecov.io/gh/samgozman/temporalcheck-lint)
 
 A [golangci-lint](https://golangci-lint.run) module plugin for static analysis of [Temporal](https://temporal.io) Go SDK code.
 
