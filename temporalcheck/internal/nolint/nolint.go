@@ -1,13 +1,9 @@
-// Package nolint honors golangci-lint //nolint directives for the temporalcheck
-// plugin's analyzers. Each analyzer applies suppression itself (rather than
-// relying on golangci-lint to filter results) so it behaves identically under
-// standalone/analysistest runs, where no such filtering happens.
+// Package nolint honors //nolint directives for the temporalcheck plugin's analyzers.
+// Each analyzer applies suppression itself so it behaves identically in standalone
+// analysistest runs (where golangci-lint filtering doesn't happen).
 //
-// golangci-lint exposes the whole plugin under the single name "temporalcheck",
-// not under each analyzer's name, so the suppression set is the same for every
-// analyzer: a bare //nolint, //nolint:all, or a //nolint:... list naming
-// "temporalcheck". That is why this logic lives here once instead of in each
-// analyzer.
+// golangci-lint exposes the whole plugin as "temporalcheck", so a bare //nolint,
+// //nolint:all, or //nolint:temporalcheck suppresses any of its analyzers.
 package nolint
 
 import (
@@ -16,13 +12,10 @@ import (
 	"strings"
 )
 
-// pluginName is the name golangci-lint knows this plugin by; a //nolint list
-// must name it (or "all") to suppress, never an individual analyzer's name.
+// pluginName is the name a //nolint list must use to suppress this plugin.
 const pluginName = "temporalcheck"
 
-// directive reports whether text is a //nolint directive that suppresses this
-// plugin: a bare "//nolint", "//nolint:all", or a "//nolint:..." list naming
-// "temporalcheck", ignoring any trailing "// explanation".
+// directive reports whether text is a //nolint directive that suppresses this plugin.
 func directive(text string) bool {
 	if !strings.HasPrefix(text, "//nolint") {
 		return false
@@ -52,11 +45,11 @@ func directive(text string) bool {
 	return false
 }
 
-// Info records where suppressing directives appear in a file. The zero value
-// suppresses nothing; obtain a populated value from Collect.
+// Info records where suppressing directives appear in a file.
+// The zero value suppresses nothing; obtain a populated value from Collect.
 type Info struct {
 	fileSuppressed bool         // a directive before the package clause suppresses the whole file
-	lines          map[int]bool // line numbers carrying a directive, to suppress a node on that line
+	lines          map[int]bool // line numbers carrying a directive
 }
 
 // Collect scans the file's comments for suppressing directives.
@@ -79,10 +72,8 @@ func Collect(fset *token.FileSet, file *ast.File) Info {
 	return info
 }
 
-// Suppresses reports whether a directive covers node: either the whole file is
-// suppressed, or a directive sits on any line the node spans. The line-range
-// check means a trailing //nolint works wherever the diagnostic anchors --
-// including nodes written across several lines.
+// Suppresses reports whether a directive covers node: the whole file is suppressed,
+// or a directive sits on any line the node spans.
 func (info Info) Suppresses(fset *token.FileSet, node ast.Node) bool {
 	if info.fileSuppressed {
 		return true

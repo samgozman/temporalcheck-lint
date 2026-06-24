@@ -1,19 +1,6 @@
-// Package futureget implements a static check for the Temporal Go SDK.
-//
-// A workflow.Future / workflow.ChildWorkflowFuture / converter.EncodedValue
-// surfaces an activity, child-workflow or decoded-value result through:
-//
-//	func (Future) Get(ctx Context, valuePtr interface{}) error
-//
-// The returned error reports a failed activity, a failed child workflow, or a
-// decode error. Dropping it -- as a bare call statement or a `_ =` assignment --
-// silently ignores that failure:
-//
-//	_ = future.Get(ctx, nil) // activity error swallowed
-//
-// This is errcheck scoped to Temporal's result types. By construction it cannot
-// fire on fire-and-forget (that path never calls .Get), and it is pure AST +
-// types with near-zero false positives, so it is on by default.
+// Package futureget flags a Future/ChildWorkflowFuture/EncodedValue .Get call
+// whose returned error is discarded, silently ignoring a failed activity,
+// child workflow, or decode error.
 package futureget
 
 import (
@@ -24,14 +11,10 @@ import (
 	"golang.org/x/tools/go/analysis"
 )
 
-// tagFutureGet suffixes the diagnostic so it is clear which check produced it.
 const tagFutureGet = "future-get"
 
 // Settings configures the futureget analyzer.
 type Settings struct {
-	// Disabled turns the analyzer off entirely; it reports nothing. The check is
-	// on by default: discarding a .Get error swallows an activity/child-workflow
-	// failure, which is always a bug, so there is nothing to opt into.
 	Disabled bool
 }
 
@@ -46,8 +29,7 @@ func NewAnalyzer(settings Settings) *analysis.Analyzer {
 	}
 }
 
-// checker threads the analyzer settings through the AST walk so the analyzer
-// stays free of package-level mutable state.
+// checker threads the analyzer settings through the AST walk.
 type checker struct {
 	disabled bool
 }
@@ -61,15 +43,11 @@ func (c *checker) run(pass *analysis.Pass) (any, error) {
 		ast.Inspect(file, func(n ast.Node) bool {
 			switch s := n.(type) {
 			case *ast.ExprStmt:
-				// A bare call statement throws the result away entirely -- the
-				// classic dropped `future.Get(ctx, &x)`.
 				if call, ok := s.X.(*ast.CallExpr); ok {
 					c.checkDiscarded(pass, nolint, call)
 				}
 			case *ast.AssignStmt:
-				// `_ = future.Get(...)` discards the error explicitly. Get is
-				// single-valued, so the discard is exactly this one-to-one blank
-				// assignment; anything else keeps the error.
+				// _ = future.Get(...): single blank assignment discards the error.
 				if s.Tok == token.ASSIGN && len(s.Lhs) == 1 && len(s.Rhs) == 1 && isBlank(s.Lhs[0]) {
 					if call, ok := s.Rhs[0].(*ast.CallExpr); ok {
 						c.checkDiscarded(pass, nolint, call)

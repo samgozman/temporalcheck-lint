@@ -6,29 +6,17 @@ import (
 	"go/types"
 )
 
-// The option structs are declared in the SDK's internal package and re-exported
-// from workflow as aliases (type ActivityOptions = internal.ActivityOptions),
-// mirroring workflow.Context. We match by path through go/types -- resolving the
-// alias to its internal definition -- so aliased imports resolve and we never
-// import the SDK.
-// The two timeout fields the checks reason about. Both ActivityOptions and
-// LocalActivityOptions carry them.
+// The option structs are declared in sdk/internal and re-exported from workflow as aliases.
+// types.Unalias() + accepting both package paths handles both gotypesalias modes.
 const (
 	fieldStartToClose    = "StartToCloseTimeout"
 	fieldScheduleToClose = "ScheduleToCloseTimeout"
 )
 
-// requiredTimeouts are the option fields Temporal requires at least one of: an
-// activity with neither StartToCloseTimeout nor ScheduleToCloseTimeout set is
-// rejected at run time.
 var requiredTimeouts = []string{fieldStartToClose, fieldScheduleToClose}
 
-// optionTypeName returns the option-struct name -- "ActivityOptions" or
-// "LocalActivityOptions" -- when t is that workflow type, and false for anything
-// else. types.Unalias resolves the workflow alias to its internal definition, so
-// the literal's type matches whether the type checker surfaces it as the alias or
-// the resolved named type (gotypesalias on or off). Matching the package path (not
-// the literal's source text) means an aliased import resolves the same way.
+// optionTypeName returns "ActivityOptions" or "LocalActivityOptions" when t is
+// one of those SDK option types (workflow or internal package path).
 func optionTypeName(t types.Type) (string, bool) {
 	named, ok := types.Unalias(t).(*types.Named)
 	if !ok {
@@ -40,7 +28,6 @@ func optionTypeName(t types.Type) (string, bool) {
 	}
 	switch obj.Pkg().Path() {
 	case temporalsdk.WorkflowPkg, temporalsdk.InternalPkg:
-		// The type lives in one of the SDK packages we match; check the name below.
 	default:
 		return "", false
 	}
@@ -52,11 +39,8 @@ func optionTypeName(t types.Type) (string, bool) {
 	}
 }
 
-// keyedFields returns the set of field names a keyed composite literal sets. ok is
-// false for two shapes we deliberately skip rather than risk a false positive: an
-// empty literal (no elements), which is typically populated field-by-field after
-// construction where this literal-only inspection can't see it; and a positional
-// literal, whose elements carry no field names to test without the struct layout.
+// keyedFields returns the field names set by a keyed composite literal.
+// Returns false for empty or positional literals.
 func keyedFields(lit *ast.CompositeLit) (fields map[string]bool, ok bool) {
 	if len(lit.Elts) == 0 {
 		return nil, false
@@ -67,8 +51,6 @@ func keyedFields(lit *ast.CompositeLit) (fields map[string]bool, ok bool) {
 		if !ok {
 			return nil, false // positional literal
 		}
-		// Keys in a struct literal are field identifiers; ignore anything else
-		// defensively rather than assume.
 		if id, ok := kv.Key.(*ast.Ident); ok {
 			fields[id.Name] = true
 		}
@@ -76,10 +58,8 @@ func keyedFields(lit *ast.CompositeLit) (fields map[string]bool, ok bool) {
 	return fields, true
 }
 
-// hasRequiredTimeout reports whether the literal set at least one required timeout
-// field. Presence of the key is enough -- we don't evaluate its value (a literal
-// 0, a variable, an expression), which keeps the check statically reliable and
-// false-positive-free at the cost of not catching an explicit `: 0`.
+// hasRequiredTimeout reports whether at least one required timeout field is set.
+// Presence is enough — values are not evaluated.
 func hasRequiredTimeout(fields map[string]bool) bool {
 	for _, name := range requiredTimeouts {
 		if fields[name] {
@@ -89,13 +69,7 @@ func hasRequiredTimeout(fields map[string]bool) bool {
 	return false
 }
 
-// scheduleToCloseOnly reports whether the literal bounds the whole activity with
-// ScheduleToCloseTimeout but omits StartToCloseTimeout, leaving a single attempt
-// unbounded. Such a literal satisfies hasRequiredTimeout (so it is never the
-// always-on diagnostic), but the recommended practice is to also bound each
-// attempt with StartToCloseTimeout -- which the opt-in require-start-to-close
-// sub-rule nudges. As elsewhere, presence of the key is enough; the value is not
-// evaluated.
+// scheduleToCloseOnly reports whether ScheduleToCloseTimeout is set but StartToCloseTimeout is not.
 func scheduleToCloseOnly(fields map[string]bool) bool {
 	return fields[fieldScheduleToClose] && !fields[fieldStartToClose]
 }

@@ -1,11 +1,5 @@
-// Package execargs implements a static check for the Temporal Go SDK.
-//
-// Temporal's workflow.ExecuteActivity / ExecuteLocalActivity /
-// ExecuteChildWorkflow take the target as interface{} and its arguments as a
-// variadic ...interface{}. That erases all compile-time checking: passing the
-// wrong number of arguments, or arguments of the wrong type, compiles cleanly
-// and only fails at run time. This analyzer resolves the referenced function's
-// real signature and checks each Execute* call site against it.
+// Package execargs checks that arguments to Temporal Execute*/Signal* calls
+// match the target function's real signature (arity, types, struct shape).
 package execargs
 
 import (
@@ -17,47 +11,16 @@ import (
 	"golang.org/x/tools/go/analysis"
 )
 
-// Settings configures the execargs analyzer. The three checks below are
-// independent, opt-in layers on top of the always-on arity check; enabling any
-// of them turns on the per-argument type comparison.
+// Settings configures the execargs analyzer.
 type Settings struct {
-	// Disabled turns the analyzer off entirely; it reports nothing.
-	Disabled bool
-
-	// StrictTypes verifies argument types, not just their count -- a genuine
-	// mismatch such as int where string is wanted. Temporal serializes arguments
-	// through its DataConverter, so Go-level assignability is stricter than the
-	// wire contract; this is off by default so the always-on arity check stays the
-	// false-positive-free baseline.
-	StrictTypes bool
-
-	// StrictPointers reports a value passed where a pointer is wanted (T vs *T,
-	// and []T vs []*T). Temporal's default DataConverter serializes both to the
-	// same wire form, so this is off by default; enable it to be warned anyway,
-	// e.g. before a DataConverter change could break that equivalence.
-	StrictPointers bool
-
-	// StructShape reports passing one struct type where a different struct type is
-	// wanted. The DataConverter serializes by field name, so two distinct structs
-	// can round-trip whenever their fields line up -- the call works today but
-	// silently drops or zero-fills any field that does not match, and breaks the
-	// moment a field is renamed or starts to matter. Off by default; this is the
-	// rarest but most dangerous case, so it has its own knob.
-	StructShape bool
-
-	// StrictTests extends the arity check to Temporal's testsuite mock setups:
-	// (*testsuite.TestWorkflowEnvironment).OnActivity / .OnWorkflow. Those take the
-	// target as interface{} and the matchers as variadic interface{}, erasing the
-	// same arity the Execute* check covers. Unlike Execute*, the matchers must
-	// cover EVERY declared parameter -- including the injected context -- so the
-	// count differs by one. Only arity is checked: the matchers are opaque
-	// (mock.Anything / mock.MatchedBy), never the real typed value, so the
-	// strict-type/pointer/struct layers cannot apply. Off by default.
-	StrictTests bool
+	Disabled       bool
+	StrictTypes    bool // also check arg types, not just count
+	StrictPointers bool // flag T vs *T mismatches (DataConverter treats them as equivalent by default)
+	StructShape    bool // flag distinct struct types (serializes by field name — drops/zeroes mismatches)
+	StrictTests    bool // also check OnActivity/OnWorkflow mock matcher arity
 }
 
-// kind tells the checker which leading, framework-injected parameter the target
-// function carries, so it knows how many parameters to skip at the call site.
+// kind tells the checker which leading parameter Temporal injects into the target.
 type kind int
 
 const (
@@ -65,19 +28,15 @@ const (
 	kindWorkflow             // leading workflow.Context is always injected (skip it)
 )
 
-// entry describes one target+args entry point: how the diagnostic names the
-// target, which leading parameter the target carries (kind), and which call
-// argument is the target reference.
+// entry describes one entry point: the diagnostic noun, the kind of injected
+// context, and which call argument is the target reference.
 type entry struct {
 	noun      string
 	kind      kind
 	targetIdx int
 }
 
-// workflowEntries are the workflow.* package functions this analyzer understands.
-// Each names its target as the second argument: ExecuteActivity(ctx, target,
-// args...) / NewContinueAsNewError(ctx, target, args...). Supporting another is a
-// single row.
+// workflowEntries are the workflow.* package functions this analyzer checks.
 var workflowEntries = map[string]entry{
 	"ExecuteActivity":       {noun: "activity", kind: kindActivity, targetIdx: 1},
 	"ExecuteLocalActivity":  {noun: "activity", kind: kindActivity, targetIdx: 1},
@@ -85,19 +44,14 @@ var workflowEntries = map[string]entry{
 	"NewContinueAsNewError": {noun: "workflow", kind: kindWorkflow, targetIdx: 1},
 }
 
-// clientEntries are the client.Client methods this analyzer understands. The
-// target index differs per method: ExecuteWorkflow(ctx, options, target, args...)
-// names it third; SignalWithStartWorkflow(ctx, id, signalName, signalArg, options,
-// target, args...) names it sixth.
+// clientEntries are the client.Client methods this analyzer checks.
+// Target index differs: ExecuteWorkflow names it third; SignalWithStartWorkflow names it sixth.
 var clientEntries = map[string]entry{
 	"ExecuteWorkflow":         {noun: "workflow", kind: kindWorkflow, targetIdx: 2},
 	"SignalWithStartWorkflow": {noun: "workflow", kind: kindWorkflow, targetIdx: 5},
 }
 
-// entryFor reports whether fn is a target+args entry point this analyzer checks.
-// workflow.* are package functions; the client methods are matched by name and
-// receiver, since the SDK declares them on client.Client rather than in a package
-// we can match by path.
+// entryFor reports whether fn is an entry point this analyzer checks.
 func entryFor(fn *types.Func) (entry, bool) {
 	if fn.Pkg().Path() == temporalsdk.WorkflowPkg {
 		e, ok := workflowEntries[fn.Name()]
@@ -110,14 +64,12 @@ func entryFor(fn *types.Func) (entry, bool) {
 	return entry{}, false
 }
 
-// testEnvType is the testsuite type whose mock-setup methods StrictTests checks.
-// The SDK declares it in the internal package and re-publishes it from testsuite
-// as an alias, so the resolved method's receiver lives in temporalsdk.InternalPkg.
+// testEnvType is the SDK type whose OnActivity/OnWorkflow methods StrictTests checks.
+// The SDK declares it in internal and re-publishes it as an alias, so the resolved
+// method's receiver lives in temporalsdk.InternalPkg.
 const testEnvType = "TestWorkflowEnvironment"
 
-// testEntryPoints maps the TestWorkflowEnvironment mock-setup methods to the noun
-// used in their diagnostics. Both take (target, matchers...), so a missing or
-// extra matcher is an arity bug the same way a misargued Execute* call is.
+// testEntryPoints maps mock-setup method names to the noun used in diagnostics.
 var testEntryPoints = map[string]string{
 	"OnActivity": "activity",
 	"OnWorkflow": "workflow",
@@ -140,8 +92,7 @@ func NewAnalyzer(settings Settings) *analysis.Analyzer {
 	}
 }
 
-// checker threads the analyzer settings through the AST walk so the analyzer
-// stays free of package-level mutable state.
+// checker threads the analyzer settings through the AST walk.
 type checker struct {
 	disabled       bool
 	strictTypes    bool
@@ -150,8 +101,7 @@ type checker struct {
 	strictTests    bool
 }
 
-// typeChecksEnabled reports whether any of the opt-in type checks is on, i.e.
-// whether the per-argument type comparison should run at all.
+// typeChecksEnabled reports whether any opt-in type check is on.
 func (c *checker) typeChecksEnabled() bool {
 	return c.strictTypes || c.strictPointers || c.structShape
 }
@@ -178,8 +128,7 @@ func (c *checker) checkCall(pass *analysis.Pass, nolint nolint.Info, call *ast.C
 		return
 	}
 
-	// Resolve via Uses (not the source text), so aliased imports of the
-	// workflow/testsuite packages still match.
+	// Resolve via Uses (not source text) so aliased imports still match.
 	fn, ok := pass.TypesInfo.Uses[sel.Sel].(*types.Func)
 	if !ok || fn.Pkg() == nil {
 		return
@@ -194,42 +143,33 @@ func (c *checker) checkCall(pass *analysis.Pass, nolint nolint.Info, call *ast.C
 }
 
 func (c *checker) checkExecuteCall(pass *analysis.Pass, nolint nolint.Info, call *ast.CallExpr, fn *types.Func, e entry) {
-	// Honor //nolint directives ourselves so suppression works the same way it
-	// does in standalone/analysistest runs, not only under golangci-lint. Checked
-	// after confirming this is an entry-point call, so unrelated calls cost nothing.
+	// Honor //nolint after confirming this is an entry-point call.
 	if nolint.Suppresses(pass.Fset, call) {
 		return
 	}
 
-	// A spread call -- ExecuteActivity(ctx, fn, slice...) -- can't be matched
-	// positionally, so leave it alone instead of emitting a false positive.
+	// A spread call can't be matched positionally.
 	if call.Ellipsis.IsValid() {
 		return
 	}
 
-	// A compiling call always has the target present, but guard the index so a
-	// malformed/partial AST can't panic.
 	if len(call.Args) <= e.targetIdx {
 		return
 	}
 	sig, ok := pass.TypesInfo.TypeOf(call.Args[e.targetIdx]).(*types.Signature)
 	if !ok {
-		// Target is registered by its string name, or is a value we can't
-		// resolve to a signature statically. Out of scope.
+		// String-named target or otherwise unresolvable — out of scope.
 		return
 	}
 
 	c.checkSignature(pass, call, fn.Name(), e, sig, call.Args[e.targetIdx+1:])
 }
 
-// checkTestCall verifies the matcher arity of a TestWorkflowEnvironment mock
-// setup -- OnActivity/OnWorkflow. The matchers must cover every declared
-// parameter, so there is no injected context to skip (the way Execute* does);
-// the count is simply the target's parameter count.
+// checkTestCall verifies the matcher arity of OnActivity/OnWorkflow mock setups.
+// Unlike Execute*, matchers must cover ALL parameters including the injected context.
 func (c *checker) checkTestCall(pass *analysis.Pass, nolint nolint.Info, call *ast.CallExpr, fn *types.Func) {
-	// Confirm the method is OnActivity/OnWorkflow on testsuite's
-	// TestWorkflowEnvironment, so an unrelated internal method -- e.g. the
-	// MockCallWrapper.Return/Once chained after the setup -- can't match.
+	// Confirm the method is OnActivity/OnWorkflow on TestWorkflowEnvironment,
+	// not an unrelated internal method (e.g. MockCallWrapper.Return/Once).
 	noun, ok := testEntryPoints[fn.Name()]
 	if !ok || !temporalsdk.IsReceiver(fn, temporalsdk.InternalPkg, testEnvType) {
 		return
@@ -238,20 +178,17 @@ func (c *checker) checkTestCall(pass *analysis.Pass, nolint nolint.Info, call *a
 		return
 	}
 
-	// A spread call -- OnActivity(fn, matchers...) -- can't be matched positionally.
+	// A spread call can't be matched positionally.
 	if call.Ellipsis.IsValid() {
 		return
 	}
 
-	// Shape is (target, matchers...); a compiling On* call has at least the
-	// required target argument, so call.Args[0] is safe to read.
+	// Shape is (target, matchers...); a compiling On* call has at least the target.
 	sig, ok := pass.TypesInfo.TypeOf(call.Args[0]).(*types.Signature)
 	if !ok {
-		// String-named target (stringtarget's job) or otherwise unresolvable.
-		return
+		return // string-named target or unresolvable
 	}
-	// A variadic target makes the matcher count unknowable statically; the mock
-	// framework flattens the variadic, so skip rather than risk a false positive.
+	// A variadic target makes matcher count unknowable; skip rather than risk a false positive.
 	if sig.Variadic() {
 		return
 	}

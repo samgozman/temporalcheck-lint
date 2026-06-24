@@ -1,27 +1,8 @@
-// Package optionscontext implements a static check for the Temporal Go SDK.
-//
-// Activities, local activities and child workflows each read their options from
-// the workflow context under a DIFFERENT key. workflow.WithActivityOptions,
-// WithLocalActivityOptions and WithChildOptions return a context carrying the
-// corresponding options; ExecuteActivity, ExecuteLocalActivity and
-// ExecuteChildWorkflow each read the matching one back out. Crossing the wires
-// compiles cleanly but blows up at run time:
-//
-//	ctx = workflow.WithChildOptions(ctx, cwo)
-//	workflow.ExecuteActivity(ctx, a.Greet) // child options, activity call -- boom
-//
-// Asking "does this ctx have the RIGHT options?" needs full dataflow and
-// cross-function visibility, which is where false positives come from. This
-// analyzer asks the narrower, decidable question instead: "does this ctx carry a
-// CONFLICTING options helper, applied in this same function, with no matching one
-// in sight?" It only ever fires on a seen contradiction, never on absence, so it
-// stays near-zero-false-positive and is on by default.
-//
-// The analysis is intra-procedural and AST+types only. It tracks, per context
-// variable, the set of option kinds applied to it through its visible derivation
-// chain, and bails to "unknown" (reports nothing) the moment it loses sight of
-// the full story: a bare function parameter, an opaque reassignment, a capture
-// in a closure, or a branch-dependent value.
+// Package optionscontext flags a workflow.Execute{Activity,LocalActivity,ChildWorkflow}
+// call whose context carries a conflicting With*Options helper applied in the same
+// function. It fires only on seen contradictions, never on absence, so it stays
+// near-zero-false-positive. The analysis is intra-procedural: it bails to "unknown"
+// on a bare parameter, opaque reassignment, closure capture, or branch-dependent value.
 package optionscontext
 
 import (
@@ -58,9 +39,6 @@ var executeFuncs = map[string]kind{
 
 // Settings configures the optionscontext analyzer.
 type Settings struct {
-	// Disabled turns the analyzer off entirely; it reports nothing. The check is
-	// on by default: it fires only on a seen options/call-kind contradiction, never
-	// on absence, so there is nothing to opt into.
 	Disabled bool
 }
 
@@ -75,8 +53,7 @@ func NewAnalyzer(settings Settings) *analysis.Analyzer {
 	}
 }
 
-// checker threads the analyzer settings through the AST walk so the analyzer
-// stays free of package-level mutable state.
+// checker threads the analyzer settings through the AST walk.
 type checker struct {
 	disabled bool
 }

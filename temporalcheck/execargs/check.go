@@ -12,9 +12,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 )
 
-// Diagnostics are suffixed with the source that produced them, so it is clear
-// which setting controls a given report. "arity" is the always-on baseline; the
-// others name the opt-in setting that surfaced the mismatch.
+// Diagnostics are suffixed with the source so it's clear which setting produced each report.
 const (
 	tagArity          = "arity"
 	tagStrictTypes    = "strict-types"
@@ -23,8 +21,8 @@ const (
 	tagStrictTests    = "strict-tests"
 )
 
-// checkSignature matches the call-site arguments against the resolved target
-// signature, accounting for the framework-injected leading parameter.
+// checkSignature matches call-site arguments against the resolved target signature,
+// accounting for the framework-injected leading parameter.
 func (c *checker) checkSignature(
 	pass *analysis.Pass,
 	call *ast.CallExpr,
@@ -42,8 +40,6 @@ func (c *checker) checkSignature(
 		return
 	}
 
-	// skip is 0 or 1, and is 1 only when params has a leading parameter to skip,
-	// so want is never negative.
 	want := params.Len() - skip
 	if len(args) != want {
 		pass.Reportf(call.Lparen, "%s: %s %q expects %d %s, got %d (%s)",
@@ -58,8 +54,6 @@ func (c *checker) checkSignature(
 	}
 }
 
-// checkVariadic handles a variadic target: a fixed prefix of parameters
-// followed by a final ...T that absorbs the trailing arguments.
 func (c *checker) checkVariadic(
 	pass *analysis.Pass,
 	call *ast.CallExpr,
@@ -71,9 +65,7 @@ func (c *checker) checkVariadic(
 	args []ast.Expr,
 ) {
 	params := sig.Params()
-	variadicIdx := params.Len() - 1 // the variadic parameter is always last
-	// skip never lands on the variadic parameter itself (the injected context is
-	// a leading fixed parameter), so fixed is never negative.
+	variadicIdx := params.Len() - 1
 	fixed := variadicIdx - skip
 
 	if len(args) < fixed {
@@ -87,7 +79,7 @@ func (c *checker) checkVariadic(
 	for i := 0; i < fixed; i++ {
 		c.checkAssignable(pass, args[i], fnName, name, i+1, params.At(skip+i).Type())
 	}
-	// A variadic parameter's type is always a slice, so this assertion holds.
+	// A variadic parameter's type is always a slice.
 	elem := params.At(variadicIdx).Type().(*types.Slice).Elem()
 	for i := fixed; i < len(args); i++ {
 		c.checkAssignable(pass, args[i], fnName, name, i+1, elem)
@@ -113,14 +105,12 @@ func (c *checker) checkAssignable(pass *analysis.Pass, arg ast.Expr, fnName, nam
 		return
 	}
 
-	// Two distinct struct types (passed by value or pointer): Temporal serializes
-	// by field name, so they may round-trip. Classify by how their fields line up.
+	// Two distinct struct types: Temporal serializes by field name, so they may round-trip.
 	if gs, ws := structUnder(got), structUnder(want); gs != nil && ws != nil {
 		c.reportStructMismatch(pass, arg, fnName, name, pos, got, want, compareStructs(gs, ws))
 		return
 	}
 
-	// A plain type mismatch (int vs string, struct vs map, ...).
 	if c.strictTypes {
 		c.reportf(pass, arg, "%s: arg %d of %q has type %s, want %s (%s)",
 			fnName, pos, name, typeStr(got), typeStr(want), tagStrictTypes)
@@ -132,20 +122,18 @@ func (c *checker) checkAssignable(pass *analysis.Pass, arg ast.Expr, fnName, nam
 func (c *checker) reportStructMismatch(pass *analysis.Pass, arg ast.Expr, fnName, name string, pos int, got, want types.Type, d structDiff) {
 	switch {
 	case d.conflict != nil:
-		// A shared field has an incompatible type: genuine wire corruption.
 		if c.strictTypes || c.structShape {
 			c.reportf(pass, arg, "%s: arg %d of %q sends %s, target wants %s — field %q is incompatible (%s vs %s) (%s)",
 				fnName, pos, name, typeStr(got), typeStr(want), d.conflict.field,
 				typeStr(d.conflict.got), typeStr(d.conflict.want), tagStrictTypes)
 		}
 	case d.overlap == 0:
-		// Nothing serializes across: almost certainly the wrong type entirely.
 		if c.strictTypes || c.structShape {
 			c.reportf(pass, arg, "%s: arg %d of %q sends %s, target wants %s — no fields in common (%s)",
 				fnName, pos, name, typeStr(got), typeStr(want), tagStrictTypes)
 		}
 	default:
-		// Wire-compatible but distinct: the dangerous-but-works case.
+		// Wire-compatible but distinct: silently drops/zeroes mismatched fields.
 		if c.structShape {
 			c.reportf(pass, arg, "%s: arg %d of %q sends %s, target wants %s — %s (%s)",
 				fnName, pos, name, typeStr(got), typeStr(want), driftPhrase(d), tagStructShape)
@@ -153,13 +141,12 @@ func (c *checker) reportStructMismatch(pass *analysis.Pass, arg ast.Expr, fnName
 	}
 }
 
-// reportf is a thin wrapper over pass.Reportf anchored at the argument.
+// reportf anchors a diagnostic at the argument position.
 func (c *checker) reportf(pass *analysis.Pass, arg ast.Expr, format string, args ...any) {
 	pass.Reportf(arg.Pos(), format, args...)
 }
 
-// structUnder returns the struct that t denotes, after stripping a single
-// pointer indirection, or nil if t is not (a pointer to) a struct.
+// structUnder returns the struct t denotes after stripping one pointer, or nil.
 func structUnder(t types.Type) *types.Struct {
 	if p, ok := types.Unalias(t).Underlying().(*types.Pointer); ok {
 		t = p.Elem()
@@ -170,11 +157,10 @@ func structUnder(t types.Type) *types.Struct {
 	return nil
 }
 
-// structDiff describes how a sent struct's fields line up with a wanted struct's,
-// matched by their on-the-wire (JSON) names.
+// structDiff describes how a sent struct's fields line up with a wanted struct's (JSON names).
 type structDiff struct {
 	overlap  int            // shared fields whose types are compatible
-	drops    []string       // sent fields the target ignores (Go names)
+	drops    []string       // sent fields the target ignores
 	unset    []string       // target fields left zero because the sender omits them
 	conflict *fieldConflict // first shared field whose types are incompatible
 }
@@ -211,8 +197,7 @@ func compareStructs(got, want *types.Struct) structDiff {
 	return d
 }
 
-// fieldsCompatible uses the same lenient notion as the top-level check, so a
-// field that differs only by pointer indirection is not treated as a conflict.
+// fieldsCompatible mirrors the top-level check: T vs *T is not a conflict.
 func fieldsCompatible(a, b types.Type) bool {
 	return types.AssignableTo(a, b) || pointerInsensitiveMatch(a, b)
 }
@@ -222,9 +207,8 @@ type fieldEntry struct {
 	typ    types.Type
 }
 
-// structFields maps each serialized field's JSON name to its info, over exported
-// fields and honoring json tags (`json:"-"` is skipped). Embedded fields are not
-// modeled (v1 limitation), so they are skipped too.
+// structFields maps each exported, non-embedded field's JSON name to its entry.
+// Fields tagged json:"-" are excluded. Embedded fields are not modeled.
 func structFields(s *types.Struct) map[string]fieldEntry {
 	out := make(map[string]fieldEntry, s.NumFields())
 	for i := 0; i < s.NumFields(); i++ {
@@ -241,8 +225,8 @@ func structFields(s *types.Struct) map[string]fieldEntry {
 	return out
 }
 
-// jsonName returns a field's on-the-wire name and whether it is serialized at
-// all, mirroring encoding/json's reading of the `json` struct tag.
+// jsonName returns the wire (JSON) field name and whether the field is serialized,
+// mirroring encoding/json's reading of the `json` struct tag.
 func jsonName(goName, tag string) (string, bool) {
 	v, ok := reflect.StructTag(tag).Lookup("json")
 	if !ok {
@@ -269,8 +253,7 @@ func sortedKeys(m map[string]fieldEntry) []string {
 	return keys
 }
 
-// driftPhrase describes what silently changes when a wire-compatible but distinct
-// struct is passed.
+// driftPhrase describes what silently changes when a wire-compatible but distinct struct is passed.
 func driftPhrase(d structDiff) string {
 	switch {
 	case len(d.drops) > 0 && len(d.unset) > 0:
@@ -297,8 +280,7 @@ func pointerInsensitiveMatch(got, want types.Type) bool {
 	return false
 }
 
-// skipCount returns how many leading parameters Temporal injects at run time and
-// that the caller therefore must not supply.
+// skipCount returns how many leading parameters Temporal injects (0 or 1).
 func skipCount(sig *types.Signature, k kind) int {
 	if sig.Params().Len() == 0 {
 		return 0
@@ -335,8 +317,7 @@ func targetName(expr ast.Expr) string {
 	}
 }
 
-// typeStr renders a type using short package names (context.Context, not the
-// full import path).
+// typeStr renders a type with short package names (e.g. context.Context).
 func typeStr(t types.Type) string {
 	return types.TypeString(t, func(p *types.Package) string { return p.Name() })
 }

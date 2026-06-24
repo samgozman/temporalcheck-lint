@@ -12,14 +12,10 @@ import (
 // tagLossyTypes suffixes the diagnostic so it is clear which check produced it.
 const tagLossyTypes = "lossy-types"
 
-// explain is the shared tail of every diagnostic: why a dynamic type corrupts a
-// number and what to do about it.
+// explain is the shared tail of every diagnostic.
 const explain = "Temporal's JSON converter decodes numbers as float64 and silently loses int64 precision past 2^53 — use a concrete type"
 
-// entry describes one Execute* entry point: how the diagnostic names the target,
-// whether the target is a workflow (leading workflow.Context, always injected) or
-// an activity (leading context.Context, optional), and which call argument is the
-// target reference.
+// entry describes one Execute* entry point.
 type entry struct {
 	noun       string
 	isWorkflow bool
@@ -27,8 +23,6 @@ type entry struct {
 }
 
 // workflowEntries are the workflow.* package functions this analyzer understands.
-// Each names its target as the second argument: ExecuteActivity(ctx, target,
-// args...) / NewContinueAsNewError(ctx, target, args...).
 var workflowEntries = map[string]entry{
 	"ExecuteActivity":       {noun: "activity", isWorkflow: false, targetIdx: 1},
 	"ExecuteLocalActivity":  {noun: "activity", isWorkflow: false, targetIdx: 1},
@@ -36,10 +30,8 @@ var workflowEntries = map[string]entry{
 	"NewContinueAsNewError": {noun: "workflow", isWorkflow: true, targetIdx: 1},
 }
 
-// clientEntries are the client.Client methods this analyzer understands, keyed by
-// method name. The target index differs per method: ExecuteWorkflow(ctx, options,
-// target, args...) names it third; SignalWithStartWorkflow(ctx, id, signalName,
-// signalArg, options, target, args...) names it sixth.
+// clientEntries are the client.Client methods this analyzer understands.
+// Target index: ExecuteWorkflow=2, SignalWithStartWorkflow=5.
 var clientEntries = map[string]entry{
 	"ExecuteWorkflow":         {noun: "workflow", isWorkflow: true, targetIdx: 2},
 	"SignalWithStartWorkflow": {noun: "workflow", isWorkflow: true, targetIdx: 5},

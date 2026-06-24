@@ -1,24 +1,8 @@
-// Package sensitiveargs implements an opt-in static check for the Temporal Go
-// SDK.
-//
-// Temporal records every activity and workflow argument in its durable event
-// history, where it is persisted and replayed for the life of the workflow. A
-// secret passed directly as an argument -- a card number, CVV, password, token --
-// is therefore written verbatim into that history. The fix is to pass an opaque
-// reference (an id, a handle) and fetch the secret inside the activity instead.
-//
-// This analyzer flags activity/workflow parameters, and the fields of
-// struct-typed parameters, whose *name* matches a configurable regular
-// expression (default: cvv|pan|card.?number|password|secret|ssn|token, case
-// insensitive). Matching on names is a heuristic -- it can flag a benign
-// `passwordPolicy` or miss an obfuscated field -- so the whole analyzer is opt-in
-// and the pattern is tunable. For teams that must keep PII and secrets out of
-// durable history it is a useful first line of defence.
-//
-// Like the sibling type-predicate analyzers it resolves the target's real
-// signature through go/types and looks only at the top level -- a parameter name,
-// or the fields of a struct (or pointer-to-struct) parameter -- to stay
-// predictable; it does not descend into nested structs, slices or maps.
+// Package sensitiveargs flags Temporal activity/workflow parameters (and the
+// exported fields of struct parameters) whose name matches a configurable regexp.
+// Temporal records arguments in durable workflow history, so a secret passed
+// directly becomes persistent. The check is opt-in because name matching is a
+// heuristic and can produce false positives.
 package sensitiveargs
 
 import (
@@ -38,19 +22,12 @@ const defaultPattern = `(?i)cvv|pan|card.?number|password|secret|ssn|token`
 
 // Settings configures the sensitiveargs analyzer.
 type Settings struct {
-	// Enabled is the master switch (default false). Because the check is a
-	// name-heuristic that can produce false positives, it reports nothing unless
-	// you opt in -- the same shape as the stringtarget analyzer.
-	Enabled bool
-
-	// Pattern is the regular expression matched (unanchored, so a substring match)
-	// against parameter and struct-field names. Empty means use defaultPattern.
-	Pattern string
+	Enabled bool   // master switch (default false)
+	Pattern string // regexp matched against param/field names; empty uses defaultPattern
 }
 
 // NewAnalyzer builds the sensitiveargs analyzer for the given settings. An
-// invalid Pattern is reported from Run (NewAnalyzer cannot return an error), so a
-// misconfigured regexp surfaces as a clear analysis error rather than silently
+// invalid Pattern surfaces as an analysis error from Run rather than silently
 // disabling the check.
 func NewAnalyzer(settings Settings) *analysis.Analyzer {
 	pattern := settings.Pattern
@@ -67,8 +44,7 @@ func NewAnalyzer(settings Settings) *analysis.Analyzer {
 	}
 }
 
-// checker threads the analyzer settings through the AST walk so the analyzer
-// stays free of package-level mutable state.
+// checker threads the analyzer settings through the AST walk.
 type checker struct {
 	enabled    bool
 	re         *regexp.Regexp

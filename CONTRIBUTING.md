@@ -1,8 +1,6 @@
 # Contributing
 
-Thanks for taking the time to contribute! This is a small, focused
-golangci-lint module plugin for Temporal, so the workflow is intentionally
-simple.
+Thanks for taking the time to contribute!
 
 ## Getting started
 
@@ -11,8 +9,7 @@ go mod tidy
 make test        # go test -race -v ./...
 ```
 
-The [`Makefile`](Makefile) is the canonical entry point for every common task —
-run `make help` to list the targets:
+The [`Makefile`](Makefile) is the canonical entry point — run `make help` to list targets:
 
 | Target             | What it does                                                     |
 |--------------------|------------------------------------------------------------------|
@@ -23,86 +20,86 @@ run `make help` to list the targets:
 | `make build`       | Build a custom golangci-lint binary with the plugin compiled in. |
 | `make run`         | Self-lint this repo with that custom binary.                     |
 
-## How the linter is organised
+## How it's organised
 
-The plugin is a thin registration shell around one analyzer per check, so new
-Temporal checks slot in without touching the existing ones:
+The plugin is a thin registration shell around one analyzer per check. New checks slot in without touching the existing ones:
 
-- [`temporalcheck/plugin.go`](temporalcheck/plugin.go) — registers the plugin
-  with golangci-lint's module system and maps the `settings:` block onto each
-  analyzer. `BuildAnalyzers` is where new analyzers are added.
-- [`temporalcheck/execargs/`](temporalcheck/execargs) — the first analyzer,
-  in its own package:
-  - `execargs.go` — settings, the `analysis.Analyzer`, and call dispatch.
-  - `check.go` — signature matching, arity/type checks, and helpers.
+- [`temporalcheck/plugin.go`](temporalcheck/plugin.go) — registers the plugin and maps the `settings:` block onto each analyzer. `BuildAnalyzers` is where new analyzers are added.
+- [`temporalcheck/execargs/`](temporalcheck/execargs) — the template analyzer (see below).
+- [`temporalcheck/internal/`](temporalcheck/internal) — shared infrastructure:
+  - `nolint/` — `//nolint` directive parsing and suppression.
+  - `temporalsdk/` — SDK import-path constants and `go/types` matchers.
+  - `workflowscope/` — workflow-function detection (used by `workflowstate`, `workflowlogger`).
+  - `sdkstub/` — the shared SDK stub for test fixtures.
 
-Adding the next Temporal check means dropping a sibling package next to
-`execargs/`, exposing a `NewAnalyzer(Settings)`, and appending it to
-`BuildAnalyzers`.
+## Adding a new analyzer
+
+Mirror the `execargs` structure: a sibling package under `temporalcheck/` exposing `NewAnalyzer(Settings) *analysis.Analyzer`, appended to `BuildAnalyzers` in `plugin.go` with its own settings block.
+
+Within the package:
+
+- `<name>.go` — `Settings`, `NewAnalyzer`, the `checker` type, `run` (AST walk), and call dispatch.
+- `check.go` — matching logic and any helpers specific to this check (generic helpers go in `internal/`).
+
+The analyzers **never import the Temporal SDK** — they match by package path through `go/types`.
 
 ## Tests
 
-Behaviour is verified with [`analysistest`](https://pkg.go.dev/golang.org/x/tools/go/analysis/analysistest)
-fixtures under `temporalcheck/execargs/testdata/`, which is a **self-contained
-Go module** (`testdata/go.mod`). The `go.temporal.io/sdk` import is satisfied by
-a local stub via a `replace` directive, so the fixtures resolve offline (the
-test runs with `GOPROXY=off`) and your IDE resolves the import instead of
-flagging it. The Go tool ignores `testdata/`, so this module never affects
-`go test/vet/build ./...` from the repo root.
+Behavior is verified with [`analysistest`](https://pkg.go.dev/golang.org/x/tools/go/analysis/analysistest) fixtures under each analyzer's `testdata/` directory, which is a **self-contained Go module**. The `go.temporal.io/sdk` import is satisfied by a local stub via a `replace` directive, so fixtures resolve offline and with no real SDK dependency.
 
-One package per scenario:
+Each `testdata/` package has `// want` assertions next to expected diagnostics. The fixture is the spec — make it read clearly.
 
-- `good/` — must produce **zero** diagnostics (correct calls, plus the cases we
-  intentionally skip: string-registered targets and spread calls).
-- `bad/` — each call carries a `// want` regexp for its expected diagnostic.
-- `notypes/` — run with `strict-types` off (the default); type mismatches must be
-  silent while arity is still checked.
-- `strictptr/` — run with `strict-pointers` on; value-vs-pointer mismatches that
-  are allowed by default must be flagged here.
-- `structshape/` — run with `strict-struct-shape` on (only); distinct structs
-  that serialize compatibly must be flagged with their field drift, while
-  incompatible/no-overlap structs surface as `strict-types` errors.
-- `structshapeoff/` — run with `strict-types` on but `strict-struct-shape` off;
-  proves the wire-compatible struct case is silent while the hard struct cases
-  remain `strict-types` errors.
-- `temporalsdk/` — a minimal stub module standing in for `go.temporal.io/sdk` so
-  fixtures type-check without vendoring the real Temporal SDK.
+Aim for **100% coverage**; CI enforces a 90% floor via `make cover-check`. When changing behavior:
 
-Pure helpers and the plugin wiring have white-box unit tests alongside the code
-(`*_internal_test.go`).
-
-### Keeping the stub honest
-
-The stub is hand-written, so it could drift from the real Temporal SDK. The
-separate [`conformance/`](conformance) module guards against that: it imports
-the **real** `go.temporal.io/sdk/workflow` and asserts at compile time that each
-`Execute*` function still has the `(ctx, target, args...)` shape the analyzer
-depends on. `make conformance` builds it; CI runs it on every PR and Dependabot
-bumps the SDK version, so an upstream signature change fails loudly on the bump
-PR — your cue to update the stub (and possibly the analyzer). It's a standalone
-module (with its own `go.mod`/`go.sum`) so the SDK's heavy dependency tree never
-enters the main module or the fixtures. It tracks a recent Go, as the SDK does;
-the root module stays on Go 1.23.
-
-When you change behaviour:
-
-1. Add or update a `testdata` fixture with the expected `// want` diagnostics
-   (the fixture *is* the spec — make it read clearly).
+1. Add or update a `testdata` fixture with `// want` assertions.
 2. Add a unit test for any new pure helper.
-3. Keep coverage at or above 90% (`make cover-check` enforces this in CI).
+3. Keep coverage at or above 90%.
+
+### The stub and conformance check
+
+The stub (`temporalcheck/internal/sdkstub/`) is hand-written and could drift. The separate [`conformance/`](conformance) module guards against this: it imports the **real** `go.temporal.io/sdk` and asserts at compile time that the shapes the analyzers depend on still hold. `make conformance` builds it; CI runs it on every PR.
+
+A key subtlety: the SDK re-exports option/config types from `workflow` as **type aliases** from `internal`. The stub mirrors this — option types live in `sdkstub/internal` and are aliased out. An analyzer matching a type literal must call `types.Unalias(t)` and accept both `workflow` and `internal` package paths.
+
+## Layout
+
+```
+temporalcheck-lint/
+├── temporalcheck/
+│   ├── plugin.go                 # register.Plugin("temporalcheck", ...)
+│   ├── execargs/                 # check Execute* call argument arity and types
+│   ├── stringtarget/             # flag string-named Execute* targets
+│   ├── optionsdiscard/           # flag discarded With*Options results
+│   ├── activitytimeout/          # flag Activity options missing a required timeout
+│   ├── futureget/                # flag discarded Future/EncodedValue .Get errors
+│   ├── lossynumber/              # flag any/interface{} params/returns (number precision)
+│   ├── nonserializable/          # flag chan/func params/returns (can't serialize)
+│   ├── continueasnew/            # flag discarded NewContinueAsNewError results
+│   ├── sensitiveargs/            # flag params/fields matching a sensitive-data pattern
+│   ├── optionscontext/           # flag Execute* calls fed the wrong With*Options context
+│   ├── workeroptions/            # flag worker.Options boot-panic + missing limits
+│   ├── workflowstate/            # flag package-level variable mutation from workflow code
+│   ├── workflowlogger/           # flag non-replay-aware logging in workflow code
+│   └── internal/
+│       ├── nolint/               # //nolint directive handling
+│       ├── temporalsdk/          # SDK import-path constants and type matchers
+│       ├── workflowscope/        # workflow-function detection
+│       └── sdkstub/              # shared SDK stub for test fixtures
+├── conformance/                  # CI-only: real-SDK contract test
+├── .custom-gcl.yml               # custom golangci-lint build config
+├── .golangci.yml                 # example consumer config (also self-lints this repo)
+├── Makefile
+└── go.mod
+```
 
 ## Pull requests
 
-- Keep changes small and focused; one behavioural change per PR where possible.
-- Make sure `make cover-check`, `make vet`, and `make tidy` are clean — CI runs
-  all three (plus a build-the-plugin-and-self-lint job) on every PR.
-- Add an entry to [`CHANGELOG.md`](CHANGELOG.md) and, when behaviour changes,
-  update the [`README.md`](README.md).
+- Keep changes small and focused; one behavioral change per PR.
+- Make sure `make cover-check`, `make vet`, and `make tidy` are clean — CI runs all three (plus a build-and-self-lint job) on every PR.
+- Add an entry to [`CHANGELOG.md`](CHANGELOG.md) and update [`README.md`](README.md) when behavior changes.
 
 ## Releasing (maintainers)
 
 1. Move the `Unreleased` notes under a new version heading in `CHANGELOG.md`.
-2. Tag the release (`git tag vX.Y.Z && git push --tags`); users pin this tag in
-   their `.custom-gcl.yml`.
-3. Keep the golangci-lint version pinned in `.custom-gcl.yml` and the CI
-   workflow in sync.
+2. Tag the release (`git tag vX.Y.Z && git push --tags`); users pin this tag in their `.custom-gcl.yml`.
+3. Keep the golangci-lint version pinned in `.custom-gcl.yml` and the CI workflow in sync.
