@@ -10,6 +10,10 @@ A [golangci-lint](https://golangci-lint.run) module plugin for static analysis o
 
 Temporal's APIs take targets and arguments as `interface{}`, erasing compile-time safety. This plugin recovers those checks statically, catching bugs that only surface at run time.
 
+> Blog post: [Temporal Workflows in Golang: The Three Things That Bite in Production](https://gozman.space/blog/temporal-workflows-in-golang-the-three-things-that-bite-in-production)
+
+It covers a few of the production pitfalls this linter is meant to catch.
+
 ## What it catches
 
 ```
