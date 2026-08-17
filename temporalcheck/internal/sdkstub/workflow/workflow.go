@@ -7,7 +7,10 @@
 // for by inspecting the target's real signature.
 package workflow
 
-import "go.temporal.io/sdk/internal"
+import (
+	"go.temporal.io/sdk/internal"
+	"go.temporal.io/sdk/temporal"
+)
 
 // Context and the option/future types are aliases to the internal definitions,
 // exactly as the real SDK re-exports them (workflow.Context = internal.Context).
@@ -47,6 +50,16 @@ func WithChildOptions(ctx Context, cwo ChildWorkflowOptions) Context { return ct
 // WithValue is a non-entry-point helper returning a Context, used by fixtures to
 // prove that an opaque reassignment makes the context's options unknown.
 func WithValue(ctx Context, key any, val any) Context { return ctx }
+
+// UpsertSearchAttributes is the legacy untyped search-attribute setter: the
+// attribute names are the map keys.
+func UpsertSearchAttributes(ctx Context, attributes map[string]interface{}) error { return nil }
+
+// UpsertTypedSearchAttributes is the typed search-attribute setter: each update
+// carries a key (built by temporal.NewSearchAttributeKey*) naming the attribute.
+func UpsertTypedSearchAttributes(ctx Context, updates ...temporal.SearchAttributeUpdate) error {
+	return nil
+}
 
 func ExecuteActivity(ctx Context, activity any, args ...any) Future { return nil }
 

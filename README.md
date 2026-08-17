@@ -97,6 +97,13 @@ is clean (see the [full configuration reference](#install) and each analyzer's R
   their target by its registered string instead of a function reference, which can't be
   checked statically and blinds `execargs`. Off by default; opt in to be nudged toward a
   checkable function reference.
+- **[`searchattribute`](temporalcheck/searchattribute)** — flags an *exported* workflow
+  whose params struct carries a configured field (e.g. `UserID`) but whose body never
+  upserts the mapped search attribute. You supply a field-alias → attribute map, so it
+  enforces your own convention. Off by default because the mapping is project-specific;
+  unexported `workflow.Context` functions are treated as helpers (not entrypoints), and a
+  workflow that upserts through a source we can't read statically is left alone, both to
+  avoid false positives.
 
 Each analyzer's linked README has full details, settings, and examples.
 
@@ -228,6 +235,11 @@ linters:
           stringtarget:
             enabled: true                # flag string-named Execute* targets (blinds execargs) (default false)
             strict-tests: true           # also flag string-named OnActivity/OnWorkflow targets (default false)
+          searchattribute:
+            enabled: true                # flag workflows that carry a mapped field but never upsert its search attribute (default false)
+            attributes:                  # field-name alias -> required search-attribute name (matching is case/separator-insensitive)
+              user_id: user_id           #   a UserID field must upsert the "user_id" attribute
+              client_id: user_id         #   aliases: ClientID also satisfies "user_id"
 ```
 
 </details>
