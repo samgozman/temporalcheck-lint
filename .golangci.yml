@@ -128,3 +128,19 @@ linters:
             # os.Stdout/os.Stderr. Off by default (some teams wire their own logging);
             # set enabled true to opt in.
             enabled: true
+          searchattribute:
+            # Flag a workflow entrypoint whose params struct carries a configured
+            # field but whose body never upserts the mapped search attribute (via
+            # workflow.UpsertTypedSearchAttributes/UpsertSearchAttributes). The
+            # mapping is project-specific, so it is off by default; set enabled true
+            # and declare the attributes map to opt in.
+            enabled: true
+            # Map of params field-name alias -> required search-attribute name.
+            # Matching is case- and separator-insensitive (user_id, x-user-id and
+            # UserID all match a UserID field), and several aliases may map to one
+            # attribute so a workflow taking any of them must upsert it. A workflow
+            # that upserts through a source we can't read statically (a prebuilt map,
+            # a spread slice, or a key held in a variable) is left alone.
+            attributes:
+              user_id: user_id
+              client_id: user_id

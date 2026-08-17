@@ -5,7 +5,20 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] - 2026-08-17
+
+### Added
+
+- `searchattribute` analyzer (opt-in): flags an exported workflow entrypoint whose
+  params struct carries a configured field but whose body never upserts the mapped
+  search attribute. The field-alias → attribute-name mapping is supplied via the
+  `attributes` setting, so it enforces a project's own convention; field matching
+  is case- and separator-insensitive and several aliases may map to one attribute.
+  Only exported functions are treated as entrypoints — unexported `workflow.Context`
+  functions are workflow helpers, not registered workflows — `_test.go` files are
+  skipped, and a workflow that upserts through a source that can't be read statically
+  (a prebuilt map, a spread slice, or a key held in a variable) is left alone, all to
+  keep the check false-positive-safe.
 
 ## [0.1.0] - 2026-06-24
 

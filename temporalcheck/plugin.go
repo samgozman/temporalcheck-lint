@@ -13,6 +13,7 @@ import (
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/nonserializable"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/optionscontext"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/optionsdiscard"
+	"github.com/samgozman/temporalcheck-lint/temporalcheck/searchattribute"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/sensitiveargs"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/stringtarget"
 	"github.com/samgozman/temporalcheck-lint/temporalcheck/workeroptions"
@@ -40,22 +41,23 @@ type Settings struct {
 	WorkerOptions   WorkerOptionsSettings   `json:"workeroptions"`
 	WorkflowState   WorkflowStateSettings   `json:"workflowstate"`
 	WorkflowLogger  WorkflowLoggerSettings  `json:"workflowlogger"`
+	SearchAttribute SearchAttributeSettings `json:"searchattribute"`
 }
 
 // ExecargsSettings configures the execargs analyzer.
 // Pointers distinguish "unset" (use the default) from an explicit false.
 type ExecargsSettings struct {
 	Disabled       *bool `json:"disabled"`
-	StrictTypes    *bool `json:"strict-types"`         // check arg types, not just count
-	StrictPointers *bool `json:"strict-pointers"`       // flag T vs *T mismatches
-	StructShape    *bool `json:"strict-struct-shape"`   // flag distinct struct types
-	StrictTests    *bool `json:"strict-tests"`          // check OnActivity/OnWorkflow matcher arity
+	StrictTypes    *bool `json:"strict-types"`        // check arg types, not just count
+	StrictPointers *bool `json:"strict-pointers"`     // flag T vs *T mismatches
+	StructShape    *bool `json:"strict-struct-shape"` // flag distinct struct types
+	StrictTests    *bool `json:"strict-tests"`        // check OnActivity/OnWorkflow matcher arity
 }
 
 // StringTargetSettings configures the stringtarget analyzer.
 type StringTargetSettings struct {
-	Enabled     *bool `json:"enabled"`       // master switch (default false)
-	StrictTests *bool `json:"strict-tests"`  // also check On* mock targets
+	Enabled     *bool `json:"enabled"`      // master switch (default false)
+	StrictTests *bool `json:"strict-tests"` // also check On* mock targets
 }
 
 // OptionsDiscardSettings configures the optionsdiscard analyzer.
@@ -92,8 +94,8 @@ type ContinueAsNewSettings struct {
 
 // SensitiveArgsSettings configures the sensitiveargs analyzer.
 type SensitiveArgsSettings struct {
-	Enabled *bool   `json:"enabled"`  // master switch (default false)
-	Pattern *string `json:"pattern"`  // regexp matched against param/field names
+	Enabled *bool   `json:"enabled"` // master switch (default false)
+	Pattern *string `json:"pattern"` // regexp matched against param/field names
 }
 
 // OptionsContextSettings configures the optionscontext analyzer.
@@ -115,6 +117,15 @@ type WorkflowStateSettings struct {
 // WorkflowLoggerSettings configures the workflowlogger analyzer.
 type WorkflowLoggerSettings struct {
 	Enabled *bool `json:"enabled"` // master switch (default false)
+}
+
+// SearchAttributeSettings configures the searchattribute analyzer.
+type SearchAttributeSettings struct {
+	Enabled *bool `json:"enabled"` // master switch (default false)
+	// Attributes maps a params field-name alias to the search-attribute name a
+	// workflow carrying that field must upsert. Matching is case- and
+	// separator-insensitive, and several aliases may map to one attribute.
+	Attributes *map[string]string `json:"attributes"`
 }
 
 type plugin struct {
@@ -192,6 +203,10 @@ func (p *plugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 		}),
 		workflowlogger.NewAnalyzer(workflowlogger.Settings{
 			Enabled: deref(s.WorkflowLogger.Enabled, false),
+		}),
+		searchattribute.NewAnalyzer(searchattribute.Settings{
+			Enabled:    deref(s.SearchAttribute.Enabled, false),
+			Attributes: deref(s.SearchAttribute.Attributes, map[string]string(nil)),
 		}),
 		// Future Temporal analyzers (e.g. registration coverage, retry-policy
 		// sanity, non-determinism heuristics) plug in here.

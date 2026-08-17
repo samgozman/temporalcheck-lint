@@ -76,6 +76,37 @@ type Selector interface {
 	Select(ctx Context)
 }
 
+// SearchAttributeUpdate mirrors the SDK type: a single change to a workflow's
+// typed search attributes, produced by a key's ValueSet and passed to
+// workflow.UpsertTypedSearchAttributes. Re-exported from the temporal package as
+// an alias, exactly as the real SDK does.
+type SearchAttributeUpdate struct{}
+
+// SearchAttributeKeyString / SearchAttributeKeyKeyword are two of the SDK's typed
+// search-attribute keys. Only the two the fixtures use are declared; each carries
+// the attribute name and yields a SearchAttributeUpdate from ValueSet, mirroring
+// the real SDK's key/ValueSet shape.
+type (
+	SearchAttributeKeyString  struct{ name string }
+	SearchAttributeKeyKeyword struct{ name string }
+)
+
+func NewSearchAttributeKeyString(name string) SearchAttributeKeyString {
+	return SearchAttributeKeyString{name: name}
+}
+
+func NewSearchAttributeKeyKeyword(name string) SearchAttributeKeyKeyword {
+	return SearchAttributeKeyKeyword{name: name}
+}
+
+func (k SearchAttributeKeyString) ValueSet(value string) SearchAttributeUpdate {
+	return SearchAttributeUpdate{}
+}
+
+func (k SearchAttributeKeyKeyword) ValueSet(value string) SearchAttributeUpdate {
+	return SearchAttributeUpdate{}
+}
+
 // MockCallWrapper stands in for the testsuite type of the same name, re-published
 // from testsuite as an alias. It carries just enough to let fixtures chain
 // .Return(...).Once() after a mock setup.

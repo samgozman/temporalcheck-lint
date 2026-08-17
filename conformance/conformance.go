@@ -9,6 +9,7 @@ import (
 
 	"go.temporal.io/sdk/client"
 	"go.temporal.io/sdk/converter"
+	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/testsuite"
 	"go.temporal.io/sdk/worker"
 	"go.temporal.io/sdk/workflow"
@@ -22,6 +23,19 @@ var (
 	_ func(workflow.Context, interface{}, ...interface{}) workflow.Future              = workflow.ExecuteLocalActivity
 	_ func(workflow.Context, interface{}, ...interface{}) workflow.ChildWorkflowFuture = workflow.ExecuteChildWorkflow
 	_ func(workflow.Context, interface{}, ...interface{}) error                        = workflow.NewContinueAsNewError
+)
+
+// searchattribute reads workflow.UpsertTypedSearchAttributes /
+// workflow.UpsertSearchAttributes as the calls a workflow makes to set search
+// attributes, scanning their arguments for the configured attribute name (a
+// key-constructor argument or a map key). These assignments stop compiling if the
+// real SDK changes either shape or the typed key/ValueSet shape; keep them in sync
+// with the stub at internal/sdkstub.
+var (
+	_ func(workflow.Context, map[string]interface{}) error            = workflow.UpsertSearchAttributes
+	_ func(workflow.Context, ...temporal.SearchAttributeUpdate) error = workflow.UpsertTypedSearchAttributes
+	_ temporal.SearchAttributeUpdate                                  = temporal.NewSearchAttributeKeyKeyword("k").ValueSet("v")
+	_ temporal.SearchAttributeUpdate                                  = temporal.NewSearchAttributeKeyString("k").ValueSet("v")
 )
 
 // The strict-tests checks read each TestWorkflowEnvironment mock setup as
